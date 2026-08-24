@@ -32,8 +32,19 @@ export class AnalysisEngine {
   async loadContext(projectPath: string): Promise<ProjectContext> {
     const resolvedPath = await resolveProjectPath(projectPath);
     const { packageJson } = await parsePackageJson(resolvedPath);
-    const sourceFiles = await loadSourceFiles(resolvedPath);
     const detectedTechnologies = detectTechnologies(packageJson);
+    const contextShell = createProjectContext({
+      projectPath: resolvedPath,
+      packageJson,
+      sourceFiles: [],
+      detectedTechnologies,
+    });
+    const sourceFiles = await loadSourceFiles(resolvedPath, {
+      extensions: contextShell.config.extensions,
+      skipPatterns: contextShell.config.skipPatterns,
+      maxFileSizeBytes: contextShell.config.maxFileSizeBytes,
+      maxSourceFiles: contextShell.config.maxSourceFiles,
+    });
 
     return createProjectContext({
       projectPath: resolvedPath,

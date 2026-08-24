@@ -19,8 +19,17 @@ export function createProjectContext(input: {
         'dist',
         'build',
         'coverage',
+        '.next',
+        '.turbo',
+        'vendor',
+        '.cache',
+        'out',
+        '.nuxt',
+        'tmp',
       ],
       extensions: input.config?.extensions ?? ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'],
+      maxFileSizeBytes: input.config?.maxFileSizeBytes ?? 512 * 1024,
+      maxSourceFiles: input.config?.maxSourceFiles ?? 4000,
     },
   };
 }

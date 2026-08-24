@@ -9,6 +9,13 @@ const DEFAULT_SKIP_DIRS = new Set([
   'coverage',
   '.next',
   '.turbo',
+  'vendor',
+  '.cache',
+  'out',
+  '.nuxt',
+  'tmp',
+  'temp',
+  '.output',
 ]);
 
 const GENERATED_FILE_PATTERNS = [
@@ -18,6 +25,9 @@ const GENERATED_FILE_PATTERNS = [
   /\.generated\./,
   /-lock\.json$/,
 ];
+
+export const DEFAULT_MAX_FILE_SIZE_BYTES = 512 * 1024;
+export const DEFAULT_MAX_SOURCE_FILES = 4000;
 
 export class PathValidationError extends Error {
   constructor(message: string) {
@@ -51,7 +61,7 @@ export function assertPathInsideRoot(rootPath: string, targetPath: string): void
 }
 
 function shouldSkipDirectory(name: string, skipPatterns: Set<string>): boolean {
-  return skipPatterns.has(name);
+  return skipPatterns.has(name) || (name.startsWith('.') && name !== '.');
 }
 
 function shouldSkipFile(relativePath: string, extensions: string[]): boolean {
@@ -64,20 +74,41 @@ function shouldSkipFile(relativePath: string, extensions: string[]): boolean {
 
 export async function collectSourceFiles(
   projectPath: string,
-  extensions: string[] = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'],
-  skipPatterns: string[] = [...DEFAULT_SKIP_DIRS],
+  options: {
+    extensions?: string[];
+    skipPatterns?: string[];
+    maxFileSizeBytes?: number;
+    maxSourceFiles?: number;
+  } = {},
 ): Promise<Array<{ absolutePath: string; relativePath: string; content: string }>> {
+  const extensions = options.extensions ?? ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
+  const skipPatterns = options.skipPatterns ?? [...DEFAULT_SKIP_DIRS];
+  const maxFileSizeBytes = options.maxFileSizeBytes ?? DEFAULT_MAX_FILE_SIZE_BYTES;
+  const maxSourceFiles = options.maxSourceFiles ?? DEFAULT_MAX_SOURCE_FILES;
+
   const resolvedRoot = await resolveProjectPath(projectPath);
   const skipSet = new Set(skipPatterns);
   const files: Array<{ absolutePath: string; relativePath: string; content: string }> = [];
 
   async function walk(currentDir: string): Promise<void> {
+    if (files.length >= maxSourceFiles) {
+      return;
+    }
+
     assertPathInsideRoot(resolvedRoot, currentDir);
     const entries = await readdir(currentDir, { withFileTypes: true });
 
     for (const entry of entries) {
+      if (files.length >= maxSourceFiles) {
+        return;
+      }
+
       const absolutePath = path.join(currentDir, entry.name);
       assertPathInsideRoot(resolvedRoot, absolutePath);
+
+      if (entry.isSymbolicLink()) {
+        continue;
+      }
 
       if (entry.isDirectory()) {
         if (!shouldSkipDirectory(entry.name, skipSet)) {
@@ -92,6 +123,11 @@ export async function collectSourceFiles(
 
       const relativePath = path.relative(resolvedRoot, absolutePath);
       if (shouldSkipFile(relativePath, extensions)) {
+        continue;
+      }
+
+      const fileStats = await stat(absolutePath).catch(() => null);
+      if (!fileStats || fileStats.size > maxFileSizeBytes) {
         continue;
       }
 
