@@ -1,5 +1,5 @@
 import type { Analyzer, Finding, ProjectContext } from '../types/index.js';
-import { parseAllSourceFiles } from './ast/astUtils.js';
+import { looksLikeMongoSource, looksLikePostgresSource, parseAllSourceFiles } from './ast/astUtils.js';
 import { analyzeMongoQueries } from './mongodb/queryAnalyzer.js';
 import { analyzePostgresQueries } from './postgres/queryAnalyzer.js';
 
@@ -10,19 +10,14 @@ export class DatabaseQueryAnalyzer implements Analyzer {
     const parsed = parseAllSourceFiles(context.sourceFiles);
     const findings: Finding[] = [];
 
-    const hasMongo =
-      context.detectedTechnologies.includes('mongodb') ||
-      context.detectedTechnologies.includes('mongoose');
-    const hasPostgres =
-      context.detectedTechnologies.includes('postgresql') ||
-      context.detectedTechnologies.includes('prisma');
+    const mongoFiles = parsed.filter((file) => looksLikeMongoSource(file.info.content));
+    const postgresFiles = parsed.filter((file) => looksLikePostgresSource(file.info.content));
 
-    if (hasMongo || !hasPostgres) {
-      findings.push(...analyzeMongoQueries(parsed));
+    if (mongoFiles.length > 0) {
+      findings.push(...analyzeMongoQueries(mongoFiles));
     }
-
-    if (hasPostgres || !hasMongo) {
-      findings.push(...analyzePostgresQueries(parsed));
+    if (postgresFiles.length > 0) {
+      findings.push(...analyzePostgresQueries(postgresFiles));
     }
 
     return findings;

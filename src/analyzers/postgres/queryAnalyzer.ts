@@ -1,14 +1,17 @@
 import ts from 'typescript';
 import { createFinding } from '../../models/Finding.js';
+import { Confidence } from '../../models/confidence.js';
 import type { Finding } from '../../types/index.js';
 import {
-  getCallExpressionName,
-  getFullCallExpressionName,
-  getLineAndColumn,
+  enclosingLoop,
+  getNodeLocation,
   getSnippet,
-  hasLimitOrPagination,
-  isDatabaseCall,
-  isInsideLoop,
+  getSqlText,
+  isBatchedQuery,
+  isInsideNestedFunction,
+  isPostgresQueryCall,
+  queryUsesLoopBinding,
+  sqlLooksUnbounded,
   type ParsedSourceFile,
   visitNodes,
 } from '../ast/astUtils.js';
@@ -18,68 +21,68 @@ export function analyzePostgresQueries(parsedFiles: ParsedSourceFile[]): Finding
 
   for (const { info, sourceFile } of parsedFiles) {
     visitNodes(sourceFile, (node) => {
-      if (!ts.isCallExpression(node)) {
+      if (!ts.isCallExpression(node) || !isPostgresQueryCall(node)) {
         return;
       }
 
-      const callName = getCallExpressionName(node) ?? '';
-      const fullName = getFullCallExpressionName(node);
-
-      const isPgCall =
-        isDatabaseCall(callName, fullName) ||
-        /\b(pool|client)\.(query|execute)\b/i.test(fullName) ||
-        /\$queryRaw\b/.test(fullName);
-
-      if (!isPgCall) {
-        return;
-      }
-
-      const { line, column } = getLineAndColumn(sourceFile, node.getStart());
-      const snippet = getSnippet(sourceFile, node);
-
-      if (isInsideLoop(node)) {
+      const loop = enclosingLoop(node);
+      if (loop && !isInsideNestedFunction(node, loop) && !isBatchedQuery(node)) {
+        const usesBinding = queryUsesLoopBinding(node, loop);
+        const location = getNodeLocation(sourceFile, node);
         findings.push(
           createFinding({
+            ruleId: 'db.pg.n-plus-one',
             category: 'database',
             severity: 'high',
             title: 'SQL query inside loop (potential N+1)',
             description:
-              'A PostgreSQL-style query appears inside a loop, which may execute one query per iteration.',
+              'A PostgreSQL-style query runs inside a loop. When SQL is parameterized with the loop item, this is a common N+1 pattern.',
             file: info.relativePath,
-            line,
-            column,
+            line: location.line,
+            column: location.column,
             evidence: {
               kind: 'potential',
-              snippet,
-              detail: 'Query detected within loop or iteration callback.',
+              snippet: getSnippet(sourceFile, node),
+              detail: usesBinding
+                ? 'Query arguments reference the loop binding.'
+                : 'Query sits in a loop body without a clear loop-variable data flow.',
             },
             recommendation:
-              'Use JOINs, batch queries with ANY($1::int[]), or prefetch data before iterating.',
-            confidence: 0.75,
-            estimatedImpact: 'High database round-trips and degraded throughput.',
+              'Prefer a JOIN, WHERE id = ANY($1), or prefetching. Do not flatten retry or pagination loops into Promise.all.',
+            confidence: usesBinding ? Confidence.potentialStrong : Confidence.potentialModerate,
+            confidenceRationale: usesBinding
+              ? 'Loop binding appears in the query (potential-strong).'
+              : 'In-loop SQL without proven per-item correlation (potential-moderate).',
+            estimatedImpact: 'Round-trips scale with iteration count.',
           }),
         );
       }
 
-      if (!hasLimitOrPagination(node) && /\bquery\s*\(/.test(fullName)) {
+      const sql = getSqlText(node);
+      if (sql && sqlLooksUnbounded(sql)) {
+        const location = getNodeLocation(sourceFile, node);
         findings.push(
           createFinding({
+            ruleId: 'db.pg.unbounded-select',
             category: 'database',
             severity: 'medium',
-            title: 'Potentially unbounded SQL query',
+            title: 'Potentially unbounded SQL SELECT',
             description:
-              'A query call was detected without an obvious LIMIT or pagination clause in the call text.',
+              'A SELECT string in source has no LIMIT/OFFSET/FETCH clause. Helpers or views may still bound results at runtime.',
             file: info.relativePath,
-            line,
-            column,
+            line: location.line,
+            column: location.column,
             evidence: {
               kind: 'potential',
-              snippet,
-              detail: 'No LIMIT/OFFSET/pagination detected in call arguments.',
+              snippet: getSnippet(sourceFile, node),
+              detail: 'Static SQL text lacks LIMIT/OFFSET/FETCH.',
             },
-            recommendation: 'Add LIMIT/OFFSET or keyset pagination to bound result sets.',
-            confidence: 0.55,
-            estimatedImpact: 'Large result sets may increase memory usage and response time.',
+            recommendation:
+              'Add LIMIT/OFFSET or keyset pagination when the table can grow. Ignore for singleton lookups.',
+            confidence: Confidence.potentialWeak,
+            confidenceRationale:
+              'SQL text heuristic only; bound views and dynamic SQL are not resolved (potential-weak).',
+            estimatedImpact: 'Unbounded result sets can increase memory and latency.',
           }),
         );
       }

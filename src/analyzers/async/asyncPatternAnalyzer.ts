@@ -1,10 +1,17 @@
 import ts from 'typescript';
 import { createFinding } from '../../models/Finding.js';
+import { Confidence } from '../../models/confidence.js';
 import type { Analyzer, Finding, ProjectContext } from '../../types/index.js';
 import {
-  getLineAndColumn,
+  boundNamesFromAwaitStatement,
+  collectReferencedIdentifiers,
+  enclosingLoop,
+  getNodeLocation,
   getSnippet,
-  isPromiseAll,
+  isBlockingSyncCall,
+  isInsideNestedFunction,
+  isRequestHandler,
+  loopIsSequentialByConstruction,
   parseAllSourceFiles,
   type ParsedSourceFile,
   visitNodes,
@@ -15,50 +22,42 @@ function analyzeAwaitInLoops(parsedFiles: ParsedSourceFile[]): Finding[] {
 
   for (const { info, sourceFile } of parsedFiles) {
     visitNodes(sourceFile, (node) => {
-      if (!ts.isForStatement(node) && !ts.isForOfStatement(node) && !ts.isForInStatement(node)) {
+      if (!ts.isAwaitExpression(node)) {
+        return;
+      }
+      const loop = enclosingLoop(node);
+      if (!loop || isInsideNestedFunction(node, loop)) {
+        return;
+      }
+      if (loopIsSequentialByConstruction(loop)) {
         return;
       }
 
-      let hasAwaitInBody = false;
-      let awaitNode: ts.Node | undefined;
-
-      const checkBody = (body: ts.Node): void => {
-        visitNodes(body, (child) => {
-          if (ts.isAwaitExpression(child)) {
-            hasAwaitInBody = true;
-            awaitNode = child;
-          }
-        });
-      };
-
-      if (node.statement) {
-        checkBody(node.statement);
-      }
-
-      if (hasAwaitInBody && awaitNode) {
-        const { line, column } = getLineAndColumn(sourceFile, awaitNode.getStart());
-        findings.push(
-          createFinding({
-            category: 'async',
-            severity: 'high',
-            title: 'await inside loop',
-            description:
-              'An await expression appears inside a loop, causing sequential asynchronous work.',
-            file: info.relativePath,
-            line,
-            column,
-            evidence: {
-              kind: 'confirmed',
-              snippet: getSnippet(sourceFile, node),
-              detail: 'Await detected in loop body.',
-            },
-            recommendation:
-              'Collect promises and use Promise.all(), or refactor to process items concurrently with bounded concurrency.',
-            confidence: 0.9,
-            estimatedImpact: 'Linear slowdown proportional to iteration count.',
-          }),
-        );
-      }
+      const location = getNodeLocation(sourceFile, node);
+      findings.push(
+        createFinding({
+          ruleId: 'async.await-in-loop',
+          category: 'async',
+          severity: 'high',
+          title: 'await inside loop',
+          description:
+            'An await expression runs in a for/for-of/forEach/map body, so iterations wait on each other. This is a performance smell only when iterations are independent.',
+          file: info.relativePath,
+          line: location.line,
+          column: location.column,
+          evidence: {
+            kind: 'confirmed',
+            snippet: getSnippet(sourceFile, loop),
+            detail: 'Await is executed by the loop body, not merely declared in a nested function.',
+          },
+          recommendation:
+            'If items are independent, collect work and use Promise.all with bounded concurrency. If each iteration needs the previous result (pagination, retries, accumulators), keep the sequential await.',
+          confidence: Confidence.confirmedStrong,
+          confidenceRationale:
+            'The await is syntactically in an iteration construct (confirmed-strong). Independence of items is not proven, so Promise.all is a suggestion, not a requirement.',
+          estimatedImpact: 'Independent iterations serialize I/O and scale linearly with list size.',
+        }),
+      );
     });
   }
 
@@ -74,57 +73,66 @@ function analyzeSequentialAwaits(parsedFiles: ParsedSourceFile[]): Finding[] {
         return;
       }
 
-      const awaitExpressions: ts.AwaitExpression[] = [];
+      const awaits: Array<{ awaitExpr: ts.AwaitExpression; boundNames: string[] }> = [];
       for (const statement of node.statements) {
-        if (ts.isExpressionStatement(statement) && ts.isAwaitExpression(statement.expression)) {
-          awaitExpressions.push(statement.expression);
+        const parsed = boundNamesFromAwaitStatement(statement);
+        if (parsed) {
+          awaits.push(parsed);
         }
-        if (ts.isVariableStatement(statement)) {
-          for (const decl of statement.declarationList.declarations) {
-            if (decl.initializer && ts.isAwaitExpression(decl.initializer)) {
-              awaitExpressions.push(decl.initializer);
+      }
+
+      if (awaits.length < 2) {
+        return;
+      }
+
+      const previousBounds = new Set<string>();
+      let allIndependent = true;
+      for (const item of awaits) {
+        const used = collectReferencedIdentifiers(item.awaitExpr.expression);
+        if (previousBounds.size > 0) {
+          for (const name of used) {
+            if (previousBounds.has(name)) {
+              allIndependent = false;
+              break;
             }
           }
         }
+        for (const bound of item.boundNames) {
+          previousBounds.add(bound);
+        }
       }
 
-      if (awaitExpressions.length < 2) {
+      if (!allIndependent) {
         return;
       }
 
-      const independent = awaitExpressions.every((expr) => {
-        const text = expr.expression.getText();
-        return !/\bawait\b/.test(text);
-      });
-
-      if (!independent) {
-        return;
-      }
-
-      const first = awaitExpressions[0];
+      const first = awaits[0];
       if (!first) {
         return;
       }
-
-      const { line, column } = getLineAndColumn(sourceFile, first.getStart());
+      const location = getNodeLocation(sourceFile, first.awaitExpr);
       findings.push(
         createFinding({
+          ruleId: 'async.sequential-independent-awaits',
           category: 'async',
           severity: 'medium',
           title: 'Sequential independent awaits',
           description:
-            'Multiple top-level await expressions in the same block may run sequentially when they appear independent.',
+            'Adjacent top-level awaits in this block do not reference bindings from earlier awaits in the same block, so they may be independent.',
           file: info.relativePath,
-          line,
-          column,
+          line: location.line,
+          column: location.column,
           evidence: {
             kind: 'potential',
             snippet: getSnippet(sourceFile, node),
-            detail: `${awaitExpressions.length} sequential await statements detected.`,
+            detail: `${awaits.length} sequential await statements with no in-block data dependence.`,
           },
-          recommendation: 'Use Promise.all([...]) to run independent async operations concurrently.',
-          confidence: 0.7,
-          estimatedImpact: 'Added latency from unnecessary serialization of I/O.',
+          recommendation:
+            'If the operations are truly independent, run them with Promise.all. If they share hidden ordering (locks, rate limits, mutations), leave them sequential.',
+          confidence: Confidence.potentialStrong,
+          confidenceRationale:
+            'No identifier from a prior await in this block is referenced (potential-strong). Side effects and cross-function state are not modeled.',
+          estimatedImpact: 'Independent I/O that is serialized adds avoidable latency.',
         }),
       );
     });
@@ -135,81 +143,40 @@ function analyzeSequentialAwaits(parsedFiles: ParsedSourceFile[]): Finding[] {
 
 function analyzeBlockingOps(parsedFiles: ParsedSourceFile[]): Finding[] {
   const findings: Finding[] = [];
-  const blockingPatterns = [
-    { pattern: /readFileSync|writeFileSync|appendFileSync/, label: 'synchronous filesystem operation' },
-    { pattern: /execSync|spawnSync/, label: 'synchronous child process execution' },
-    { pattern: /JSON\.parse\s*\(|JSON\.stringify\s*\(/, label: 'potentially large synchronous JSON operation' },
-  ];
 
   for (const { info, sourceFile } of parsedFiles) {
     visitNodes(sourceFile, (node) => {
       if (!ts.isCallExpression(node)) {
         return;
       }
-
-      const fullName = node.expression.getText();
-      for (const { pattern, label } of blockingPatterns) {
-        if (!pattern.test(fullName)) {
-          continue;
-        }
-
-        const { line, column } = getLineAndColumn(sourceFile, node.getStart());
-        findings.push(
-          createFinding({
-            category: 'async',
-            severity: 'medium',
-            title: 'Blocking operation in async code path',
-            description: `Detected ${label}, which blocks the event loop.`,
-            file: info.relativePath,
-            line,
-            column,
-            evidence: {
-              kind: 'confirmed',
-              snippet: getSnippet(sourceFile, node),
-            },
-            recommendation: 'Prefer async alternatives (fs.promises, child_process.spawn) in request paths.',
-            confidence: fullName.includes('Sync') ? 0.95 : 0.6,
-            estimatedImpact: 'Event loop blocking reduces throughput under load.',
-          }),
-        );
+      const blocking = isBlockingSyncCall(node);
+      if (!blocking) {
+        return;
       }
-    });
-  }
-
-  return findings;
-}
-
-function analyzePromiseAllOpportunities(parsedFiles: ParsedSourceFile[]): Finding[] {
-  const findings: Finding[] = [];
-
-  for (const { info, sourceFile } of parsedFiles) {
-    visitNodes(sourceFile, (node) => {
-      if (!ts.isCallExpression(node)) {
+      if (!isRequestHandler(node) && !enclosingLoop(node)) {
         return;
       }
 
-      const callName = node.expression.getText();
-      if (!isPromiseAll('', callName)) {
-        return;
-      }
-
-      const { line, column } = getLineAndColumn(sourceFile, node.getStart());
+      const location = getNodeLocation(sourceFile, node);
       findings.push(
         createFinding({
+          ruleId: 'async.blocking-sync-in-handler',
           category: 'async',
-          severity: 'info',
-          title: 'Promise.all usage detected',
-          description: 'Concurrent async execution via Promise.all is present.',
+          severity: 'medium',
+          title: 'Blocking sync I/O in request path',
+          description: `Detected ${blocking.label} inside a request handler or loop. Module-level startup reads are not flagged.`,
           file: info.relativePath,
-          line,
-          column,
+          line: location.line,
+          column: location.column,
           evidence: {
             kind: 'confirmed',
             snippet: getSnippet(sourceFile, node),
           },
-          recommendation: 'Ensure error handling and consider bounded concurrency for large arrays.',
-          confidence: 1,
-          estimatedImpact: 'Positive pattern for parallel I/O when used appropriately.',
+          recommendation: 'Use fs.promises or child_process.spawn on request paths.',
+          confidence: Confidence.confirmedSyntactic,
+          confidenceRationale:
+            'Sync fs/child_process APIs in a handler or loop are unambiguous (confirmed-syntactic).',
+          estimatedImpact: 'Event-loop blocking reduces throughput under concurrent load.',
         }),
       );
     });
@@ -227,7 +194,6 @@ export class AsyncPatternAnalyzer implements Analyzer {
       ...analyzeAwaitInLoops(parsed),
       ...analyzeSequentialAwaits(parsed),
       ...analyzeBlockingOps(parsed),
-      ...analyzePromiseAllOpportunities(parsed),
     ];
   }
 }

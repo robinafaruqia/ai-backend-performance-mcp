@@ -1,14 +1,14 @@
 import ts from 'typescript';
 import { createFinding } from '../../models/Finding.js';
+import { Confidence } from '../../models/confidence.js';
 import type { Analyzer, Finding, ProjectContext } from '../../types/index.js';
 import {
-  getCallExpressionName,
-  getFullCallExpressionName,
-  getLineAndColumn,
+  enclosingLoop,
+  getNodeLocation,
   getSnippet,
-  isConnectionCreation,
-  isInsideLoop,
+  isConnectionConstruction,
   isRequestHandler,
+  isStartupContext,
   parseAllSourceFiles,
   type ParsedSourceFile,
   visitNodes,
@@ -22,68 +22,64 @@ function analyzeConnectionPooling(parsedFiles: ParsedSourceFile[]): Finding[] {
       if (!ts.isCallExpression(node) && !ts.isNewExpression(node)) {
         return;
       }
-
-      let callName = '';
-      let fullName = '';
-
-      if (ts.isCallExpression(node)) {
-        callName = getCallExpressionName(node) ?? '';
-        fullName = getFullCallExpressionName(node);
-      } else if (ts.isNewExpression(node)) {
-        fullName = node.expression.getText();
-        callName = fullName.split('.').pop() ?? fullName;
+      if (!isConnectionConstruction(node)) {
+        return;
       }
-
-      if (!isConnectionCreation(callName, fullName)) {
+      if (isStartupContext(node)) {
         return;
       }
 
-      const { line, column } = getLineAndColumn(sourceFile, node.getStart());
+      const location = getNodeLocation(sourceFile, node);
       const snippet = getSnippet(sourceFile, node);
 
       if (isRequestHandler(node)) {
         findings.push(
           createFinding({
+            ruleId: 'pooling.client-in-handler',
             category: 'pooling',
             severity: 'critical',
             title: 'Connection or client created in request handler',
             description:
-              'Database client or pool creation appears inside a request handler, which can exhaust connections.',
+              'A MongoClient, Pool, or equivalent is constructed inside an HTTP route handler rather than at process startup.',
             file: info.relativePath,
-            line,
-            column,
+            line: location.line,
+            column: location.column,
             evidence: {
               kind: 'confirmed',
               snippet,
-              detail: 'Connection creation nested under route/handler registration.',
+              detail: 'Construction is nested under app/router route registration.',
             },
             recommendation:
-              'Create a shared client/pool at module scope or application startup and reuse it across requests.',
-            confidence: 0.9,
-            estimatedImpact: 'Connection storms, memory leaks, and database saturation.',
+              'Create one shared client/pool at module scope or in main()/bootstrap and reuse it across requests.',
+            confidence: Confidence.confirmedSyntactic,
+            confidenceRationale:
+              'new MongoClient / MongoClient.connect / new Pool / createPool inside a route callback (confirmed-syntactic).',
+            estimatedImpact: 'Per-request connect storms, FD leaks, and database saturation.',
           }),
         );
       }
 
-      if (isInsideLoop(node)) {
+      const loop = enclosingLoop(node);
+      if (loop) {
         findings.push(
           createFinding({
+            ruleId: 'pooling.client-in-loop',
             category: 'pooling',
             severity: 'high',
             title: 'Connection or client created inside loop',
-            description:
-              'Database client or pool creation appears inside a loop, causing repeated initialization.',
+            description: 'A database client or pool is constructed inside a loop.',
             file: info.relativePath,
-            line,
-            column,
+            line: location.line,
+            column: location.column,
             evidence: {
               kind: 'confirmed',
               snippet,
-              detail: 'Connection creation nested inside loop or iteration.',
+              detail: 'Construction nested inside an iteration construct.',
             },
-            recommendation: 'Initialize the client once outside the loop and reuse it.',
-            confidence: 0.85,
-            estimatedImpact: 'Repeated connection setup adds latency and resource churn.',
+            recommendation: 'Create the client once outside the loop and reuse it.',
+            confidence: Confidence.confirmedStrong,
+            confidenceRationale: 'Construction is nested in a loop (confirmed-strong).',
+            estimatedImpact: 'Repeated handshake cost and connection churn.',
           }),
         );
       }

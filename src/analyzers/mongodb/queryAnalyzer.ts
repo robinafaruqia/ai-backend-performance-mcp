@@ -1,14 +1,19 @@
 import ts from 'typescript';
 import { createFinding } from '../../models/Finding.js';
+import { Confidence } from '../../models/confidence.js';
 import type { Finding } from '../../types/index.js';
 import {
-  getCallExpressionName,
-  getFullCallExpressionName,
-  getLineAndColumn,
+  enclosingLoop,
+  getMongoFilterFields,
+  getNodeLocation,
   getSnippet,
-  hasLimitOrPagination,
-  isDatabaseCall,
-  isInsideLoop,
+  isBatchedQuery,
+  isIdOnlyFilter,
+  isInsideNestedFunction,
+  isMongoFindCall,
+  isMongoQueryCall,
+  mongoCallHasPagination,
+  queryUsesLoopBinding,
   type ParsedSourceFile,
   visitNodes,
 } from '../ast/astUtils.js';
@@ -18,67 +23,77 @@ export function analyzeMongoQueries(parsedFiles: ParsedSourceFile[]): Finding[] 
 
   for (const { info, sourceFile } of parsedFiles) {
     visitNodes(sourceFile, (node) => {
-      if (!ts.isCallExpression(node)) {
+      if (!ts.isCallExpression(node) || !isMongoQueryCall(node)) {
         return;
       }
 
-      const callName = getCallExpressionName(node) ?? '';
-      const fullName = getFullCallExpressionName(node);
-
-      if (!isDatabaseCall(callName, fullName)) {
-        return;
-      }
-
-      const { line, column } = getLineAndColumn(sourceFile, node.getStart());
-      const snippet = getSnippet(sourceFile, node);
-
-      if (isInsideLoop(node)) {
+      const loop = enclosingLoop(node);
+      if (loop && !isInsideNestedFunction(node, loop) && !isBatchedQuery(node)) {
+        const usesBinding = queryUsesLoopBinding(node, loop);
+        const location = getNodeLocation(sourceFile, node);
         findings.push(
           createFinding({
+            ruleId: 'db.mongo.n-plus-one',
             category: 'database',
             severity: 'high',
             title: 'Database query inside loop (potential N+1)',
             description:
-              'A MongoDB-style query appears inside a loop or array iteration, which may cause N+1 query behavior.',
+              'A MongoDB collection query runs inside a loop. When the filter uses the loop item, this is a common N+1 pattern.',
             file: info.relativePath,
-            line,
-            column,
+            line: location.line,
+            column: location.column,
             evidence: {
               kind: 'potential',
-              snippet,
-              detail: 'Query detected within loop or iteration callback.',
+              snippet: getSnippet(sourceFile, node),
+              detail: usesBinding
+                ? 'Query arguments reference the loop binding.'
+                : 'Query sits in a loop body without a clear loop-variable data flow.',
             },
             recommendation:
-              'Batch queries with $in filters, use aggregation pipelines, or prefetch related data before the loop.',
-            confidence: 0.75,
-            estimatedImpact: 'High latency and database load under concurrent traffic.',
+              'Load related documents with $in or an aggregation before iterating. Keep per-item queries only when each iteration must observe previous writes.',
+            confidence: usesBinding ? Confidence.potentialStrong : Confidence.potentialModerate,
+            confidenceRationale: usesBinding
+              ? 'Loop binding flows into the query filter (potential-strong). Still potential: the loop may be intentionally sequential.'
+              : 'In-loop query without proven per-item correlation (potential-moderate).',
+            estimatedImpact: 'Round-trips grow linearly with list size under load.',
           }),
         );
       }
 
-      if (!hasLimitOrPagination(node) && /\bfind\s*\(/.test(fullName)) {
-        findings.push(
-          createFinding({
-            category: 'database',
-            severity: 'medium',
-            title: 'Potentially unbounded find query',
-            description:
-              'A find-style query was detected without an obvious limit, skip, or pagination parameter.',
-            file: info.relativePath,
-            line,
-            column,
-            evidence: {
-              kind: 'potential',
-              snippet,
-              detail: 'No limit/skip/pagination detected in call arguments.',
-            },
-            recommendation:
-              'Add .limit() and pagination, or use cursor-based pagination for large result sets.',
-            confidence: 0.6,
-            estimatedImpact: 'Memory pressure and slow responses for large collections.',
-          }),
-        );
+      if (!isMongoFindCall(node) || mongoCallHasPagination(node)) {
+        return;
       }
+
+      const filterFields = getMongoFilterFields(node);
+      if (isIdOnlyFilter(filterFields)) {
+        return;
+      }
+
+      const location = getNodeLocation(sourceFile, node);
+      findings.push(
+        createFinding({
+          ruleId: 'db.mongo.unbounded-find',
+          category: 'database',
+          severity: 'medium',
+          title: 'Potentially unbounded find query',
+          description:
+            'A MongoDB find() cursor is created without an in-source .limit() / skip() (or equivalent options). Collection size is unknown.',
+          file: info.relativePath,
+          line: location.line,
+          column: location.column,
+          evidence: {
+            kind: 'potential',
+            snippet: getSnippet(sourceFile, node),
+            detail: 'No limit/skip/pagination detected on this find call or its chain.',
+          },
+          recommendation:
+            'Add .limit() or cursor pagination when the result set can grow. Ignore if a helper already bounds the cursor.',
+          confidence: Confidence.potentialModerate,
+          confidenceRationale:
+            'Call-chain heuristic only; wrapping helpers are not followed (potential-moderate).',
+          estimatedImpact: 'Large collections can inflate memory and response time.',
+        }),
+      );
     });
   }
 
