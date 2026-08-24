@@ -20,50 +20,56 @@ Full-project scan across all registered analyzers.
 
 ## analyze_database_queries
 
-Detects:
+Detects (as **potential** unless noted):
 
-- Queries inside loops (potential N+1)
-- Potentially unbounded `find` / `query` calls
+- Mongo/Postgres queries inside loops that look like per-item lookups (N+1)
+- Mongo `find()` without in-source `limit`/`skip`
+- SQL `SELECT` without `LIMIT`/`FETCH`
+
+Does **not** flag `Array.prototype.find`, batched `$in` / `ANY()` / `IN (...)`, `_id`-only finds, or INSERT/UPDATE.
 
 ## analyze_indexes
 
-MongoDB-focused static comparison of:
+MongoDB-focused comparison of in-repo `createIndex` / `ensureIndex` keys vs query filter/sort fields.
 
-- `createIndex` / `ensureIndex` definitions
-- Query filter and sort fields in `find` calls
+Does **not** inspect Atlas or the live cluster. If the repository contains no `createIndex` calls, this tool emits no index findings (indexes may be managed elsewhere). `_id` lookups are ignored.
 
 ## analyze_async_patterns
 
 Detects:
 
-- `await` inside `for`/`for..of` loops
-- Sequential independent awaits in the same block
-- Blocking sync operations (`readFileSync`, `execSync`, etc.)
-- `Promise.all` usage (informational)
+- `await` inside `for` / `for..of` / `forEach` / `map` (not `while` pagination/retry loops)
+- Sequential awaits in one block that do **not** consume prior bindings
+- `readFileSync` / `execSync` (and similar) inside request handlers or loops
+
+Does **not** flag `Promise.all`, `JSON.parse`, or module-scope startup `readFileSync`. Does not recommend `Promise.all` when the next await uses the previous result.
 
 ## analyze_connection_pooling
 
-Detects:
+Detects construction of `MongoClient`, `pg.Pool`, `createPool`, or `mongoose.connect` inside HTTP route handlers or loops.
 
-- `MongoClient.connect`, `new Pool`, or similar inside request handlers
-- Connection creation inside loops
+Does **not** flag module-scope clients, `main`/`start`/`bootstrap` setup, or `existingClient.connect()`.
 
 ## analyze_dependencies
 
-Analyzes `package.json` and `package-lock.json`:
+Analyzes `package.json` via static import/require scans:
 
-- Dependency counts
 - Potentially unused production dependencies
-- Dev dependencies imported in source
+- Dev dependencies imported in application source
 - Test tools listed under `dependencies`
+- Imports not declared in `package.json`
+
+Does **not** emit informational dependency-count findings. Yarn/pnpm lockfiles and CLI-only packages are not fully modeled.
 
 ## Finding schema
 
 Each finding includes:
 
-- `category`, `severity`, `title`, `description`
+- `ruleId`, `category`, `severity`, `title`, `description`
 - `file`, `line`, `column` (when available)
 - `evidence.kind` — `confirmed` or `potential`
 - `evidence.snippet` — relevant code excerpt
-- `confidence` (0–1)
+- `confidence` (0–1) and `confidenceRationale`
 - `recommendation`, `estimatedImpact`
+
+See [confidence.md](./confidence.md) for scoring bands.

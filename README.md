@@ -159,9 +159,11 @@ Try the included demo project at [examples/sample-node-api](examples/sample-node
 
 ## Limitations
 
-- Static analysis only; may produce false positives (marked as `potential`)
+- Static analysis only; findings that depend on cluster state stay `potential`
 - Dynamic `require()` / runtime-generated queries are not fully tracked
-- Index analysis compares in-repo `createIndex` calls only (not Atlas/ops-managed indexes)
+- Index analysis compares in-repo `createIndex` calls only (not Atlas/ops-managed indexes) and stays silent when the repo defines none
+- `Array.find`, batched `$in`/`ANY()`, `_id` lookups, and module-scope DB clients are not treated as issues
+- Sequential awaits are flagged only when they do not consume prior bindings; `Promise.all` is never reported as a finding
 - Dependency unused detection is import-scan based
 - Redis-specific rules are planned but not implemented in v0.1.0
 
@@ -185,7 +187,7 @@ See [docs/development.md](docs/development.md).
 npm test
 ```
 
-Fixture projects under `tests/fixtures/` cover N+1 queries, await-in-loop, sequential awaits, connection-in-handler, index mismatch, and dependency issues.
+Fixture projects under `tests/fixtures/` pair **problematic** and **valid** code for N+1 queries, indexes, async, pooling, and dependencies so analyzers do not fire on every await, query, loop, or connection.
 
 ## Roadmap
 

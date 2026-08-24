@@ -41,20 +41,26 @@ src/
   models/       Finding and result helpers
   utils/        Filesystem safety and logging
 tests/
-  fixtures/     Minimal projects with known anti-patterns
+  fixtures/     Paired mini-projects: anti-patterns and valid code that must stay quiet
   analyzers/    Analyzer unit tests
   tools/        Tool-level tests
 ```
+
+Each analyzer should have both a **problematic** fixture and a **valid** fixture so rules do not fire on every await, query, loop, or connection.
 
 ## Adding an analyzer
 
 1. Create an analyzer under `src/analyzers/<category>/`
 2. Implement the `Analyzer` interface
 3. Register in `src/analysisEngine.ts`
-4. Add fixture project and unit tests under `tests/`
+4. Add **bad and good** fixture projects plus unit tests under `tests/`
+5. Document the rule’s confidence band in [confidence.md](./confidence.md)
 
 ## Safety constraints
 
 - Read-only filesystem access within the validated `projectPath`
+- Skip symlinks; cap file size and file count
 - No code execution from analyzed repositories
 - No package installation or git modifications
+
+Confidence rules: [confidence.md](./confidence.md).
