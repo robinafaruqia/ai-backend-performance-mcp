@@ -1,0 +1,8 @@
+{
+  "name": "fixture-valid-mongo-patterns",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "mongodb": "^6.0.0"
+  }
+}

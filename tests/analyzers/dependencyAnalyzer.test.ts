@@ -16,6 +16,7 @@ describe('dependencyAnalyzer', () => {
     const unused = findings.find((f) => f.title.includes('unused production dependency'));
     expect(unused).toBeDefined();
     expect(unused?.category).toBe('dependencies');
+    expect(unused?.evidence.kind).toBe('potential');
 
     const misclassified = findings.find((f) =>
       f.title.includes('Development dependency imported'),
@@ -26,5 +27,12 @@ describe('dependencyAnalyzer', () => {
     const testTool = findings.find((f) => f.title.includes('Test tool listed'));
     expect(testTool).toBeDefined();
     expect(testTool?.evidence.kind).toBe('confirmed');
+  });
+
+  it('does not flag a tidy package.json with matching imports', async () => {
+    const engine = createAnalysisEngine();
+    const context = await engine.loadContext(path.join(fixturesRoot, 'valid-dependencies'));
+    const findings = await dependencyAnalyzer.analyze(context);
+    expect(findings).toHaveLength(0);
   });
 });
