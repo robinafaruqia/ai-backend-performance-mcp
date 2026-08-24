@@ -8,12 +8,14 @@ import type {
   FindingSeverity,
   GroupedFindings,
 } from '../types/index.js';
+import { clampConfidence } from './confidence.js';
 
 export function createFindingId(): string {
   return randomUUID();
 }
 
 export function createFinding(input: {
+  ruleId: string;
   category: FindingCategory;
   severity: FindingSeverity;
   title: string;
@@ -24,9 +26,10 @@ export function createFinding(input: {
   evidence: FindingEvidence;
   recommendation: string;
   confidence: number;
+  confidenceRationale?: string;
   estimatedImpact: string;
 }): Finding {
-  const confidence = Math.min(1, Math.max(0, input.confidence));
+  const confidence = clampConfidence(input.confidence);
   return {
     id: createFindingId(),
     ...input,

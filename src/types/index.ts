@@ -18,6 +18,8 @@ export interface FindingEvidence {
 
 export interface Finding {
   id: string;
+  /** Stable rule identifier, e.g. `db.mongo.n-plus-one`. */
+  ruleId: string;
   category: FindingCategory;
   severity: FindingSeverity;
   title: string;
@@ -27,7 +29,10 @@ export interface Finding {
   column?: number;
   evidence: FindingEvidence;
   recommendation: string;
+  /** 0–1. See docs/confidence.md for scoring bands. */
   confidence: number;
+  /** Why this confidence band was chosen. */
+  confidenceRationale?: string;
   estimatedImpact: string;
 }
 
@@ -64,6 +69,8 @@ export interface SourceFileInfo {
 export interface ProjectConfig {
   skipPatterns: string[];
   extensions: string[];
+  maxFileSizeBytes: number;
+  maxSourceFiles: number;
 }
 
 export interface ProjectContext {
