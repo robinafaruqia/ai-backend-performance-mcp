@@ -1,0 +1,11 @@
+{
+  "name": "fixture-valid-dependencies",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "express": "^4.18.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "sample-node-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Demo Node.js API with intentional performance anti-patterns for ai-backend-performance-mcp",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0",
+    "mongodb": "^6.0.0"
+  }
+}
