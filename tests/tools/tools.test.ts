@@ -28,4 +28,14 @@ describe('MCP tool wrappers', () => {
     const result = await analyzeAsyncPatterns(path.join(fixturesRoot, 'await-in-loop'));
     expect(result.findings.some((f) => f.category === 'async')).toBe(true);
   });
+
+  it('analyze_project smokes the sample-node-api example', async () => {
+    const samplePath = path.join(__dirname, '../../examples/sample-node-api');
+    const result = await analyzeProject(samplePath);
+
+    expect(result.metadata.packageName).toBe('sample-node-api');
+    expect(result.metadata.sourceFileCount).toBeGreaterThan(0);
+    expect(result.summary.totalFindings).toBeGreaterThan(0);
+    expect(result.technologies).toEqual(expect.arrayContaining(['express', 'mongodb']));
+  });
 });

@@ -67,33 +67,29 @@ Tool reference: [docs/tools.md](docs/tools.md)
 
 ## Installation
 
+**Local (primary until the package is on npm):** clone, install, and build. `npm install` runs `prepare`, which compiles `dist/`.
+
 ```bash
-npm install ai-backend-performance-mcp
+git clone https://github.com/robinafaruqia/ai-backend-performance-mcp.git
+cd ai-backend-performance-mcp
+npm install
 ```
 
-Or run directly:
+Then start the server over stdio:
 
 ```bash
-npx ai-backend-performance-mcp
+node dist/index.js
+```
+
+**After npm publish:**
+
+```bash
+npx -y ai-backend-performance-mcp
 ```
 
 ## MCP configuration
 
-Add to your MCP client config (example for Cursor / Claude Desktop):
-
-```json
-{
-  "mcpServers": {
-    "backend-performance": {
-      "command": "npx",
-      "args": ["-y", "ai-backend-performance-mcp"],
-      "env": {}
-    }
-  }
-}
-```
-
-For local development:
+Use a local build in Cursor (or Claude Desktop) first. Replace the path with the absolute path to this repo:
 
 ```json
 {
@@ -101,6 +97,19 @@ For local development:
     "backend-performance": {
       "command": "node",
       "args": ["/absolute/path/to/ai-backend-performance-mcp/dist/index.js"]
+    }
+  }
+}
+```
+
+After the package is published to npm:
+
+```json
+{
+  "mcpServers": {
+    "backend-performance": {
+      "command": "npx",
+      "args": ["-y", "ai-backend-performance-mcp"]
     }
   }
 }

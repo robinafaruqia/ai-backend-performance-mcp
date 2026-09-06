@@ -21,6 +21,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "prepare": "npm run build",
     "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [
@@ -34,7 +35,7 @@
     "backend",
     "ai"
   ],
-  "author": "",
+  "author": "robinafaruqia",
   "license": "MIT",
   "repository": {
     "type": "git",

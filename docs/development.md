@@ -23,12 +23,31 @@ npm install
 
 ## Running the MCP server locally
 
+`npm install` runs `prepare`, which compiles `dist/`. You can also build explicitly:
+
 ```bash
 npm run build
 node dist/index.js
 ```
 
-The server communicates over stdio. Configure your MCP client to launch the binary.
+The server communicates over **stdio** (do not write analysis logs to stdout). Point Cursor at the compiled entry:
+
+```json
+{
+  "mcpServers": {
+    "backend-performance": {
+      "command": "node",
+      "args": ["/absolute/path/to/ai-backend-performance-mcp/dist/index.js"]
+    }
+  }
+}
+```
+
+Confirm `dist/index.js` starts with `#!/usr/bin/env node` after a build.
+
+## Publishing to npm
+
+Quality checks stay in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml). A `v*` tag push runs [`.github/workflows/publish.yml`](../.github/workflows/publish.yml), which calls `npm publish` (`prepublishOnly` rebuilds and tests). Set repository secret `NPM_TOKEN` to an npm automation token before tagging `v0.1.0`.
 
 ## Project layout
 
