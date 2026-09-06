@@ -27,7 +27,7 @@ flowchart TD
 
 ### MCP Server (`src/server/`)
 
-- Registers six analysis tools
+- Registers six focused analysis tools plus `investigate_performance`
 - Handles stdio transport
 - Contains no analysis logic
 
@@ -43,6 +43,7 @@ flowchart TD
 - Loads project context (package.json, source files, detected technologies)
 - Orchestrates analyzer execution
 - Caches TypeScript ASTs per `sourceFiles` array so analyzers do not re-parse
+- Post-processes findings: code-path location, technology context, related IDs (`src/investigation/`)
 
 ### Analyzers (`src/analyzers/`)
 
@@ -63,6 +64,7 @@ Shared call classification lives in `src/analyzers/ast/astUtils.ts`. Confidence 
 - `utils/fileSystem.ts` — path containment, symlink skip, size/count caps
 - `analyzers/ast/astUtils.ts` — TypeScript AST helpers
 - `models/confidence.ts` — confidence constants and clamp
+- `investigation/` — enrichment, related-finding links, clusters/hotspots (deterministic catalogs, not an LLM)
 
 ## Safety
 

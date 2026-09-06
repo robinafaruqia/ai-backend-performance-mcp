@@ -34,3 +34,5 @@ Static analysis cannot see runtime database state, traffic, or values inside var
 | `deps.*` | potential-weak to confirmed-strong | Import scan cannot see CLI binaries or dynamic `require`. |
 
 Implementation: `src/models/confidence.ts`. Each finding should set `confidenceRationale`.
+
+`costWhy` and `inspectNext` on findings come from a static rule catalog (`src/investigation/ruleGuidance.ts`). They do not raise or lower confidence.

@@ -61,6 +61,23 @@ Analyzes `package.json` via static import/require scans:
 
 Does **not** emit informational dependency-count findings. Yarn/pnpm lockfiles and CLI-only packages are not fully modeled.
 
+## investigate_performance
+
+Runs every analyzer once, then returns an **investigation** payload for an AI client to reason over. Deterministic: no LLM inside the server.
+
+**Input:** `{ projectPath }` (same as the other tools).
+
+**Output**
+
+- `projectContext` — package metadata, `technologies`, `databases`, `frameworks`
+- `findings` — enriched findings (location, technology, `costWhy`, `relatedFindingIds`, `inspectNext`)
+- `clusters` — groups by same file, same HTTP route, or complementary rules
+- `hotspots` — ranked by severity × confidence × related count
+- `inspectNext` — ordered list of finding / file / cluster targets
+- `summary` — includes `clusterCount`
+
+Use this as the default entry point when an agent should decide what to inspect next. The six `analyze_*` tools remain for focused scans.
+
 ## Finding schema
 
 Each finding includes:
@@ -71,5 +88,10 @@ Each finding includes:
 - `evidence.snippet` — relevant code excerpt
 - `confidence` (0–1) and `confidenceRationale`
 - `recommendation`, `estimatedImpact`
+- `location` — file, line, enclosing function, HTTP route, `hotPath`
+- `technology` — databases, frameworks, rule family
+- `costWhy` — catalog text for why the pattern is likely expensive
+- `relatedFindingIds` — other findings in the same file/route or complementary rules
+- `inspectNext` — catalog next steps (not an LLM)
 
-See [confidence.md](./confidence.md) for scoring bands.
+See [confidence.md](./confidence.md) for scoring bands. `costWhy` / `inspectNext` do not change confidence.

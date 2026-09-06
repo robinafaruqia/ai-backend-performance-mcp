@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type {
   AnalysisResult,
   AnalysisSummary,
@@ -10,8 +9,27 @@ import type {
 } from '../types/index.js';
 import { clampConfidence } from './confidence.js';
 
-export function createFindingId(): string {
-  return randomUUID();
+function sanitizeIdPart(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().slice(0, 80);
+}
+
+export function createFindingId(
+  ruleId: string,
+  file?: string,
+  line?: number,
+  column?: number,
+  disambiguator?: string,
+): string {
+  if (file && line !== undefined && column !== undefined) {
+    return `${ruleId}:${file}:${line}:${column}`;
+  }
+  if (file) {
+    return `${ruleId}:${file}`;
+  }
+  if (disambiguator) {
+    return `${ruleId}:${sanitizeIdPart(disambiguator)}`;
+  }
+  return ruleId;
 }
 
 export function createFinding(input: {
@@ -31,7 +49,7 @@ export function createFinding(input: {
 }): Finding {
   const confidence = clampConfidence(input.confidence);
   return {
-    id: createFindingId(),
+    id: createFindingId(input.ruleId, input.file, input.line, input.column, input.evidence.snippet),
     ...input,
     confidence,
   };

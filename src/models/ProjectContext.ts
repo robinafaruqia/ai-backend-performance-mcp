@@ -1,3 +1,4 @@
+import { splitTechnologies } from '../parsers/packageJson.js';
 import type { PackageJson, ProjectConfig, ProjectContext } from '../types/index.js';
 
 export function createProjectContext(input: {
@@ -7,11 +8,14 @@ export function createProjectContext(input: {
   detectedTechnologies: string[];
   config?: Partial<ProjectConfig>;
 }): ProjectContext {
+  const { databases, frameworks } = splitTechnologies(input.detectedTechnologies);
   return {
     projectPath: input.projectPath,
     packageJson: input.packageJson,
     sourceFiles: input.sourceFiles,
     detectedTechnologies: input.detectedTechnologies,
+    databases,
+    frameworks,
     config: {
       skipPatterns: input.config?.skipPatterns ?? [
         'node_modules',

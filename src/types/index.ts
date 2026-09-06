@@ -16,6 +16,23 @@ export interface FindingEvidence {
   detail?: string;
 }
 
+export type HotPath = 'request-handler' | 'loop' | 'startup' | 'module' | 'unknown';
+
+export interface FindingLocation {
+  file: string;
+  line?: number;
+  column?: number;
+  enclosingFunction?: string;
+  route?: { method?: string; path?: string };
+  hotPath: HotPath;
+}
+
+export interface FindingTechnology {
+  databases: string[];
+  frameworks: string[];
+  ruleFamily: string;
+}
+
 export interface Finding {
   id: string;
   /** Stable rule identifier, e.g. `db.mongo.n-plus-one`. */
@@ -34,6 +51,12 @@ export interface Finding {
   /** Why this confidence band was chosen. */
   confidenceRationale?: string;
   estimatedImpact: string;
+  location?: FindingLocation;
+  technology?: FindingTechnology;
+  /** Deterministic reason this pattern is likely expensive. Catalog, not an LLM. */
+  costWhy?: string;
+  relatedFindingIds?: string[];
+  inspectNext?: string[];
 }
 
 export interface AnalysisSummary {
@@ -78,7 +101,52 @@ export interface ProjectContext {
   packageJson: PackageJson | null;
   sourceFiles: SourceFileInfo[];
   detectedTechnologies: string[];
+  databases: string[];
+  frameworks: string[];
   config: ProjectConfig;
+}
+
+export type InvestigationClusterReason = 'same-file' | 'same-route' | 'complementary-rules';
+
+export interface InvestigationCluster {
+  id: string;
+  reason: InvestigationClusterReason;
+  findingIds: string[];
+  files: string[];
+  technologies: string[];
+}
+
+export interface InvestigationHotspot {
+  findingId: string;
+  score: number;
+  reasons: string[];
+}
+
+export interface InvestigationInspectNext {
+  kind: 'finding' | 'file' | 'cluster';
+  target: string;
+  why: string;
+}
+
+export interface InvestigationSummary extends AnalysisSummary {
+  clusterCount: number;
+}
+
+export interface InvestigationResult {
+  projectPath: string;
+  projectContext: {
+    packageName: string | null;
+    packageVersion: string | null;
+    sourceFileCount: number;
+    technologies: string[];
+    databases: string[];
+    frameworks: string[];
+  };
+  summary: InvestigationSummary;
+  findings: Finding[];
+  clusters: InvestigationCluster[];
+  hotspots: InvestigationHotspot[];
+  inspectNext: InvestigationInspectNext[];
 }
 
 export interface Analyzer {

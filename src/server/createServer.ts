@@ -7,6 +7,7 @@ import { analyzeDatabaseQueries } from '../tools/analyzeDatabaseQueries.js';
 import { analyzeDependencies } from '../tools/analyzeDependencies.js';
 import { analyzeIndexes } from '../tools/analyzeIndexes.js';
 import { analyzeProject } from '../tools/analyzeProject.js';
+import { investigatePerformance } from '../tools/investigatePerformance.js';
 import { getLogger, type Logger } from '../utils/logger.js';
 
 const projectPathSchema = z.object({
@@ -49,7 +50,7 @@ export function createServer(): McpServer {
   const logger = getLogger('server');
   const server = new McpServer({
     name: 'ai-backend-performance-mcp',
-    version: '0.1.0',
+    version: '0.2.0',
   });
 
   server.registerTool(
@@ -114,6 +115,17 @@ export function createServer(): McpServer {
     },
     async ({ projectPath }) =>
       runAnalysisTool(logger, 'analyze_dependencies', projectPath, analyzeDependencies),
+  );
+
+  server.registerTool(
+    'investigate_performance',
+    {
+      description:
+        'Run all analyzers and return enriched findings with code-path context, related issues, clusters, hotspots, and what to inspect next. Deterministic; does not call an LLM.',
+      inputSchema: projectPathSchema.shape,
+    },
+    async ({ projectPath }) =>
+      runAnalysisTool(logger, 'investigate_performance', projectPath, investigatePerformance),
   );
 
   return server;

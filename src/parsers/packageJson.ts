@@ -52,3 +52,24 @@ export function detectTechnologies(packageJson: PackageJson | null): string[] {
 
   return [...technologies].sort();
 }
+
+const DATABASE_TECH = new Set([
+  'mongodb',
+  'mongoose',
+  'postgresql',
+  'prisma',
+  'typeorm',
+  'sequelize',
+  'redis',
+]);
+
+const FRAMEWORK_TECH = new Set(['express', 'fastify', 'koa']);
+
+export function splitTechnologies(detectedTechnologies: string[]): {
+  databases: string[];
+  frameworks: string[];
+} {
+  const databases = detectedTechnologies.filter((tech) => DATABASE_TECH.has(tech)).sort();
+  const frameworks = detectedTechnologies.filter((tech) => FRAMEWORK_TECH.has(tech)).sort();
+  return { databases, frameworks };
+}

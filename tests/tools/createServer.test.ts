@@ -19,7 +19,7 @@ function silentLogger(): Logger {
 }
 
 describe('createServer', () => {
-  it('registers all six MCP tools', () => {
+  it('creates an MCP server instance', () => {
     const server = createServer();
     expect(server).toBeDefined();
     expect(server.isConnected()).toBe(false);

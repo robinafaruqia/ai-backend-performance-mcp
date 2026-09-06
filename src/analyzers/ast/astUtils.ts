@@ -497,6 +497,96 @@ export function isRequestHandler(node: ts.Node): boolean {
   return false;
 }
 
+export function enclosingFunctionName(node: ts.Node): string | undefined {
+  let current: ts.Node | undefined = node;
+  while (current) {
+    if (isFunctionLike(current)) {
+      const name = functionName(current);
+      if (name) {
+        return name;
+      }
+    }
+    current = current.parent;
+  }
+  return undefined;
+}
+
+export function enclosingRoute(node: ts.Node): { method?: string; path?: string } | undefined {
+  let current: ts.Node | undefined = node;
+  while (current) {
+    if (ts.isArrowFunction(current) || ts.isFunctionExpression(current)) {
+      const parent = current.parent;
+      if (ts.isCallExpression(parent) && isHttpRouteRegistration(parent)) {
+        const method = ts.isPropertyAccessExpression(parent.expression)
+          ? parent.expression.name.text.toUpperCase()
+          : undefined;
+        const firstArg = parent.arguments[0];
+        let routePath: string | undefined;
+        if (
+          firstArg &&
+          (ts.isStringLiteral(firstArg) || ts.isNoSubstitutionTemplateLiteral(firstArg))
+        ) {
+          routePath = firstArg.text;
+        }
+        return { method, path: routePath };
+      }
+    }
+    current = current.parent;
+  }
+  return undefined;
+}
+
+export function classifyHotPath(node: ts.Node): 'request-handler' | 'loop' | 'startup' | 'module' | 'unknown' {
+  if (isRequestHandler(node)) {
+    return 'request-handler';
+  }
+  if (enclosingLoop(node)) {
+    return 'loop';
+  }
+  const name = enclosingFunctionName(node);
+  if (name && STARTUP_FUNCTION_NAMES.has(name)) {
+    return 'startup';
+  }
+  let current: ts.Node | undefined = node;
+  let sawFunction = false;
+  while (current) {
+    if (isFunctionLike(current)) {
+      sawFunction = true;
+      break;
+    }
+    current = current.parent;
+  }
+  if (!sawFunction) {
+    return 'module';
+  }
+  return 'unknown';
+}
+
+export function findInnermostNodeAt(
+  sourceFile: ts.SourceFile,
+  line: number,
+  column: number,
+): ts.Node | undefined {
+  const lineIndex = Math.max(0, line - 1);
+  const columnIndex = Math.max(0, column - 1);
+  let position: number;
+  try {
+    position = sourceFile.getPositionOfLineAndCharacter(lineIndex, columnIndex);
+  } catch {
+    return undefined;
+  }
+
+  let best: ts.Node | undefined;
+  const visit = (node: ts.Node): void => {
+    if (position >= node.getStart(sourceFile) && position < node.getEnd()) {
+      best = node;
+      ts.forEachChild(node, visit);
+    }
+  };
+  visit(sourceFile);
+  return best;
+}
+
 export function isConnectionConstruction(node: ts.CallExpression | ts.NewExpression): boolean {
   if (ts.isNewExpression(node)) {
     const name = node.expression.getText();

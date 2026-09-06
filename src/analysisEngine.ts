@@ -9,6 +9,7 @@ import { databaseQueryAnalyzer } from './analyzers/databaseQueryAnalyzer.js';
 import { dependencyAnalyzer } from './analyzers/dependencies/dependencyAnalyzer.js';
 import { indexAnalyzer } from './analyzers/mongodb/indexAnalyzerRunner.js';
 import { connectionPoolAnalyzer } from './analyzers/pooling/connectionPoolAnalyzer.js';
+import { finalizeFindings } from './investigation/finalizeFindings.js';
 
 export interface AnalysisEngineOptions {
   analyzers?: Analyzer[];
@@ -56,11 +57,12 @@ export class AnalysisEngine {
 
   async runAll(context: ProjectContext): Promise<Finding[]> {
     const results = await Promise.all(this.analyzers.map((analyzer) => analyzer.analyze(context)));
-    return results.flat();
+    return finalizeFindings(context, results.flat());
   }
 
   async runAnalyzer(analyzer: Analyzer, context: ProjectContext): Promise<Finding[]> {
-    return analyzer.analyze(context);
+    const findings = await analyzer.analyze(context);
+    return finalizeFindings(context, findings);
   }
 
   getAnalyzers(): Analyzer[] {

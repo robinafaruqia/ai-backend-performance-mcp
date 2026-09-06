@@ -56,6 +56,7 @@ src/
   server/       MCP transport and tool registration
   tools/        Thin MCP tool wrappers
   analyzers/    Static analysis implementations
+  investigation/ Enriched evidence, related findings, investigate_performance
   parsers/      package.json and source file loading
   models/       Finding and result helpers
   utils/        Filesystem safety and logging

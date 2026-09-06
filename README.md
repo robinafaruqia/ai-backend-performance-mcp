@@ -62,6 +62,7 @@ See [docs/architecture.md](docs/architecture.md) for layer details.
 | `analyze_async_patterns` | Async/await performance patterns |
 | `analyze_connection_pooling` | Connection lifecycle anti-patterns |
 | `analyze_dependencies` | `package.json` / lockfile hygiene |
+| `investigate_performance` | Full scan plus code-path context, related findings, clusters, and inspect-next hints |
 
 Tool reference: [docs/tools.md](docs/tools.md)
 
