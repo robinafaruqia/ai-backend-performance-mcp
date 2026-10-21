@@ -50,7 +50,7 @@ flowchart TD
 | Analyzer | Focus |
 |----------|-------|
 | `databaseQueryAnalyzer` | Mongo/Postgres N+1 and unbounded reads. Ignores `Array.find` and batched `$in` / `ANY()` / `IN`. |
-| `indexAnalyzer` | Compares queries to in-repo `createIndex` only. Never claims the live database is missing an index. No findings if the repo has no `createIndex`. |
+| `indexAnalyzer` | Compares queries to in-repo `createIndex` key order and sort direction. Never claims the live database is missing an index. No findings if the repo has no `createIndex`, or if any key spec is dynamic. |
 | `asyncPatternAnalyzer` | Await in loops, sequential **independent** awaits, blocking sync I/O on request paths. Does not flag `Promise.all`. |
 | `connectionPoolAnalyzer` | `MongoClient` / `Pool` construction in handlers or loops, not module-scope startup. |
 | `dependencyAnalyzer` | Unused/misplaced deps from static imports. No informational count findings. |
@@ -61,7 +61,7 @@ Shared call classification lives in `src/analyzers/ast/astUtils.ts`. Confidence 
 
 - `parsers/packageJson.ts` — dependency and technology detection
 - `parsers/sourceFiles.ts` — safe, read-only source file collection
-- `utils/fileSystem.ts` — path containment, symlink skip, size/count caps
+- `utils/fileSystem.ts` — path containment, symlink skip (`O_NOFOLLOW` on read), size/count/total-byte caps, truncation stats
 - `analyzers/ast/astUtils.ts` — TypeScript AST helpers
 - `models/confidence.ts` — confidence constants and clamp
 - `investigation/` — enrichment, related-finding links, clusters/hotspots (deterministic catalogs, not an LLM)

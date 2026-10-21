@@ -1,6 +1,6 @@
 {
   "name": "ai-backend-performance-mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "MCP server that analyzes Node.js backend projects for performance anti-patterns using static analysis",
   "type": "module",
   "main": "./dist/index.js",

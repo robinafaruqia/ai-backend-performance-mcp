@@ -40,18 +40,20 @@ export class AnalysisEngine {
       sourceFiles: [],
       detectedTechnologies,
     });
-    const sourceFiles = await loadSourceFiles(resolvedPath, {
+    const loaded = await loadSourceFiles(resolvedPath, {
       extensions: contextShell.config.extensions,
       skipPatterns: contextShell.config.skipPatterns,
       maxFileSizeBytes: contextShell.config.maxFileSizeBytes,
       maxSourceFiles: contextShell.config.maxSourceFiles,
+      maxTotalBytes: contextShell.config.maxTotalBytes,
     });
 
     return createProjectContext({
       projectPath: resolvedPath,
       packageJson,
-      sourceFiles,
+      sourceFiles: loaded.files,
       detectedTechnologies,
+      scan: loaded.scan,
     });
   }
 

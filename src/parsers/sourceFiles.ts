@@ -1,4 +1,4 @@
-import type { SourceFileInfo } from '../types/index.js';
+import type { ProjectScanStats, SourceFileInfo } from '../types/index.js';
 import { collectSourceFiles } from '../utils/fileSystem.js';
 
 export async function loadSourceFiles(
@@ -8,7 +8,8 @@ export async function loadSourceFiles(
     skipPatterns?: string[];
     maxFileSizeBytes?: number;
     maxSourceFiles?: number;
+    maxTotalBytes?: number;
   },
-): Promise<SourceFileInfo[]> {
+): Promise<{ files: SourceFileInfo[]; scan: ProjectScanStats }> {
   return collectSourceFiles(projectPath, options);
 }

@@ -8,6 +8,10 @@ export async function findByStatus(collection: Collection, status: string) {
   return collection.find({ status }).sort({ createdAt: -1 }).toArray();
 }
 
+export async function findByStatusReverse(collection: Collection, status: string) {
+  return collection.find({ status }).sort({ createdAt: 1 }).toArray();
+}
+
 export async function findById(collection: Collection, id: string) {
   return collection.find({ _id: id }).toArray();
 }
