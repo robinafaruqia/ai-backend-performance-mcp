@@ -55,10 +55,17 @@ const BY_RULE: Record<string, RuleGuidance> = {
   },
   'db.mongo.index-not-in-source': {
     costWhy:
-      'Filter or sort fields have no matching createIndex in this repo, so the live collection may scan.',
+      'No in-repo createIndex matches this query as a compound prefix (key order and sort direction). The live collection may still be indexed.',
     inspectNext: [
-      'This does not inspect Atlas; verify indexes in ops if createIndex lives outside the repo.',
-      'If the repo owns indexes, add a createIndex covering the filter/sort fields.',
+      'Compare equality prefix, range field, and sort direction with createIndex key order. A reverse scan flips every direction.',
+      'This does not inspect Atlas. If createIndex is dynamic or lives outside the repo, this rule stays silent or is only a hint.',
+    ],
+  },
+  'deps.lockfile-duplicate-version': {
+    costWhy: 'Two resolved versions of one package increase install size and can bind different copies at runtime.',
+    inspectNext: [
+      'Open package-lock.json and see which dependents force the extra version.',
+      'Deduplicate only when the ranges can share one version.',
     ],
   },
   'async.await-in-loop': {

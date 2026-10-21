@@ -50,7 +50,7 @@ export function createServer(): McpServer {
   const logger = getLogger('server');
   const server = new McpServer({
     name: 'ai-backend-performance-mcp',
-    version: '0.2.0',
+    version: '0.2.1',
   });
 
   server.registerTool(

@@ -171,7 +171,7 @@ Try the included demo project at [examples/sample-node-api](examples/sample-node
 
 - Static analysis only; findings that depend on cluster state stay `potential`
 - Dynamic `require()` / runtime-generated queries are not fully tracked
-- Index analysis compares in-repo `createIndex` calls only (not Atlas/ops-managed indexes) and stays silent when the repo defines none
+- Index analysis compares in-repo `createIndex` key order and sort direction only (not Atlas/ops-managed indexes). It stays silent when the repo defines none, or when a key spec is dynamic, and every index finding stays potential
 - `Array.find`, batched `$in`/`ANY()`, `_id` lookups, and module-scope DB clients are not treated as issues
 - Sequential awaits are flagged only when they do not consume prior bindings; `Promise.all` is never reported as a finding
 - Dependency unused detection is import-scan based

@@ -27,6 +27,13 @@ describe('dependencyAnalyzer', () => {
     const testTool = findings.find((f) => f.title.includes('Test tool listed'));
     expect(testTool).toBeDefined();
     expect(testTool?.evidence.kind).toBe('confirmed');
+
+    const duplicate = findings.find((f) => f.ruleId === 'deps.lockfile-duplicate-version');
+    expect(duplicate?.evidence.kind).toBe('potential');
+    expect(duplicate?.evidence.snippet).toContain('axios');
+    expect(duplicate?.evidence.snippet).toContain('0.27.0');
+    expect(duplicate?.evidence.snippet).toContain('1.6.0');
+    expect(findings.filter((f) => f.ruleId === 'deps.lockfile-duplicate-version')).toHaveLength(1);
   });
 
   it('does not flag a tidy package.json with matching imports', async () => {

@@ -94,6 +94,15 @@ export interface ProjectConfig {
   extensions: string[];
   maxFileSizeBytes: number;
   maxSourceFiles: number;
+  maxTotalBytes: number;
+}
+
+export interface ProjectScanStats {
+  truncated: boolean;
+  skippedSymlinks: number;
+  skippedOversize: number;
+  skippedUnreadable: number;
+  totalBytesRead: number;
 }
 
 export interface ProjectContext {
@@ -104,6 +113,7 @@ export interface ProjectContext {
   databases: string[];
   frameworks: string[];
   config: ProjectConfig;
+  scan: ProjectScanStats;
 }
 
 export type InvestigationClusterReason = 'same-file' | 'same-route' | 'complementary-rules';
@@ -138,6 +148,7 @@ export interface InvestigationResult {
     packageName: string | null;
     packageVersion: string | null;
     sourceFileCount: number;
+    scan: ProjectScanStats;
     technologies: string[];
     databases: string[];
     frameworks: string[];

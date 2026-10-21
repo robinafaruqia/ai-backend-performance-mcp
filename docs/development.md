@@ -79,7 +79,8 @@ Each analyzer should have both a **problematic** fixture and a **valid** fixture
 ## Safety constraints
 
 - Read-only filesystem access within the validated `projectPath`
-- Skip symlinks; cap file size and file count
+- Skip symlinks and open source files with `O_NOFOLLOW` so a swapped link is not followed
+- Cap file size, file count, and total bytes read; `analyze_project` reports when the scan stopped early
 - No code execution from analyzed repositories
 - No package installation or git modifications
 
