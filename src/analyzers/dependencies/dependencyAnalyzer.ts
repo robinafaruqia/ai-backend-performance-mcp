@@ -1,9 +1,8 @@
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createFinding } from '../../models/Finding.js';
 import { Confidence } from '../../models/confidence.js';
 import type { Analyzer, Finding, PackageJson, ProjectContext } from '../../types/index.js';
-import { assertPathInsideRoot } from '../../utils/fileSystem.js';
+import { readJsonFile } from '../../utils/fileSystem.js';
 
 const NODE_BUILTINS = new Set([
   'assert',
@@ -86,11 +85,68 @@ function collectImportedPackages(sourceFiles: ProjectContext['sourceFiles']): Se
   return imported;
 }
 
-async function lockfileExists(projectPath: string): Promise<boolean> {
-  const lockfilePath = path.join(projectPath, 'package-lock.json');
-  assertPathInsideRoot(projectPath, lockfilePath);
-  const content = await readFile(lockfilePath, 'utf8').catch(() => null);
-  return content !== null;
+interface LockPackage {
+  name?: string;
+  version?: string;
+  dependencies?: Record<string, LockPackage>;
+}
+
+function packageNameFromLockPath(pkgPath: string): string | null {
+  const parts = pkgPath.split('node_modules/');
+  const last = parts[parts.length - 1];
+  if (!last || pkgPath === '') {
+    return null;
+  }
+  return last.endsWith('/') ? last.slice(0, -1) : last;
+}
+
+export function duplicateLockfileVersions(lock: unknown): Array<{ name: string; versions: string[] }> {
+  const versions = new Map<string, Set<string>>();
+  const add = (name: string | undefined, version: string | undefined): void => {
+    if (!name || !version) {
+      return;
+    }
+    const set = versions.get(name) ?? new Set<string>();
+    set.add(version);
+    versions.set(name, set);
+  };
+
+  if (!lock || typeof lock !== 'object') {
+    return [];
+  }
+
+  const record = lock as {
+    packages?: Record<string, { name?: string; version?: string }>;
+    dependencies?: Record<string, LockPackage>;
+  };
+
+  if (record.packages) {
+    for (const [pkgPath, meta] of Object.entries(record.packages)) {
+      if (pkgPath === '' || !meta) {
+        continue;
+      }
+      add(meta.name ?? packageNameFromLockPath(pkgPath) ?? undefined, meta.version);
+    }
+  } else if (record.dependencies) {
+    const walk = (deps: Record<string, LockPackage>): void => {
+      for (const [name, meta] of Object.entries(deps)) {
+        add(name, meta?.version);
+        if (meta?.dependencies) {
+          walk(meta.dependencies);
+        }
+      }
+    };
+    walk(record.dependencies);
+  }
+
+  return [...versions.entries()]
+    .filter(([, set]) => set.size > 1)
+    .map(([name, set]) => ({ name, versions: [...set].sort() }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+async function readPackageLock(projectPath: string): Promise<unknown | null> {
+  return readJsonFile<unknown>(path.join(projectPath, 'package-lock.json'), projectPath);
 }
 
 export class DependencyAnalyzer implements Analyzer {
@@ -106,7 +162,31 @@ export class DependencyAnalyzer implements Analyzer {
 
     const declared = declaredDependencies(packageJson);
     const imported = collectImportedPackages(context.sourceFiles);
-    await lockfileExists(context.projectPath);
+    const lockfile = await readPackageLock(context.projectPath);
+    for (const duplicate of duplicateLockfileVersions(lockfile)) {
+      findings.push(
+        createFinding({
+          ruleId: 'deps.lockfile-duplicate-version',
+          category: 'dependencies',
+          severity: 'low',
+          title: 'Lockfile resolves more than one version of a package',
+          description: `package-lock.json resolves "${duplicate.name}" at ${duplicate.versions.join(' and ')}.`,
+          file: 'package-lock.json',
+          evidence: {
+            kind: 'potential',
+            snippet: `${duplicate.name}@${duplicate.versions.join(', ')}`,
+            detail:
+              'npm nests multiple versions when ranges conflict. This is evidence of duplication, not proof it is accidental.',
+          },
+          recommendation:
+            'Inspect the lockfile tree before deduping. Keep multiple versions when dependents require incompatible ranges; they still add install size.',
+          confidence: Confidence.potentialWeak,
+          confidenceRationale:
+            'The lockfile lists more than one resolved version (potential-weak). Yarn and pnpm lockfiles are not parsed.',
+          estimatedImpact: 'Duplicate copies increase install size and can hide which version a require() binds.',
+        }),
+      );
+    }
 
     for (const dep of declared.production) {
       if (imported.has(dep) || dep.startsWith('@types/')) {

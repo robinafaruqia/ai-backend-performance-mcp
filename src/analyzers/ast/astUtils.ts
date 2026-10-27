@@ -291,6 +291,215 @@ export function extractObjectKeys(node: ts.ObjectLiteralExpression): string[] {
   return keys;
 }
 
+export type IndexDirection = 1 | -1;
+
+export interface OrderedField {
+  name: string;
+  direction: IndexDirection | null;
+}
+
+export interface ObjectShape {
+  fields: OrderedField[];
+  opaque: boolean;
+}
+
+function unwrapExpression(expression: ts.Expression): ts.Expression {
+  let current = expression;
+  while (
+    ts.isAsExpression(current) ||
+    ts.isSatisfiesExpression(current) ||
+    ts.isParenthesizedExpression(current) ||
+    ts.isTypeAssertionExpression(current)
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
+function propertyNameText(name: ts.PropertyName): string | null {
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) {
+    return name.text;
+  }
+  return null;
+}
+
+export function literalIndexDirection(expression: ts.Expression): IndexDirection | null {
+  const value = unwrapExpression(expression);
+  if (ts.isNumericLiteral(value)) {
+    if (value.text === '1') {
+      return 1;
+    }
+    if (value.text === '-1') {
+      return -1;
+    }
+    return null;
+  }
+  if (
+    ts.isPrefixUnaryExpression(value) &&
+    value.operator === ts.SyntaxKind.MinusToken &&
+    ts.isNumericLiteral(value.operand) &&
+    value.operand.text === '1'
+  ) {
+    return -1;
+  }
+  if (ts.isStringLiteral(value)) {
+    const text = value.text.toLowerCase();
+    if (text === 'asc' || text === 'ascending' || text === '1') {
+      return 1;
+    }
+    if (text === 'desc' || text === 'descending' || text === '-1') {
+      return -1;
+    }
+  }
+  return null;
+}
+
+export function readObjectShape(node: ts.ObjectLiteralExpression): ObjectShape {
+  const fields: OrderedField[] = [];
+  let opaque = false;
+
+  for (const prop of node.properties) {
+    if (ts.isSpreadAssignment(prop) || ts.isMethodDeclaration(prop) || ts.isComputedPropertyName(prop.name)) {
+      opaque = true;
+      continue;
+    }
+    if (ts.isShorthandPropertyAssignment(prop)) {
+      fields.push({ name: prop.name.text, direction: null });
+      continue;
+    }
+    if (!ts.isPropertyAssignment(prop)) {
+      opaque = true;
+      continue;
+    }
+    const name = propertyNameText(prop.name);
+    if (!name) {
+      opaque = true;
+      continue;
+    }
+    fields.push({ name, direction: literalIndexDirection(prop.initializer) });
+  }
+
+  return { fields, opaque };
+}
+
+const RANGE_OPERATORS = new Set([
+  '$gt',
+  '$gte',
+  '$lt',
+  '$lte',
+  '$ne',
+  '$in',
+  '$nin',
+  '$exists',
+  '$not',
+  '$regex',
+  '$type',
+]);
+
+export interface MongoFilterShape {
+  equalityFields: string[];
+  rangeFields: string[];
+  opaque: boolean;
+}
+
+export function getMongoFilterShape(node: ts.CallExpression): MongoFilterShape {
+  const filterArg = node.arguments[0] ? unwrapExpression(node.arguments[0]) : undefined;
+  if (!filterArg) {
+    return { equalityFields: [], rangeFields: [], opaque: false };
+  }
+  if (!ts.isObjectLiteralExpression(filterArg)) {
+    return { equalityFields: [], rangeFields: [], opaque: true };
+  }
+
+  const equalityFields: string[] = [];
+  const rangeFields: string[] = [];
+  let opaque = false;
+
+  for (const prop of filterArg.properties) {
+    if (ts.isSpreadAssignment(prop) || ts.isMethodDeclaration(prop)) {
+      opaque = true;
+      continue;
+    }
+    if (ts.isShorthandPropertyAssignment(prop)) {
+      equalityFields.push(prop.name.text);
+      continue;
+    }
+    if (!ts.isPropertyAssignment(prop)) {
+      opaque = true;
+      continue;
+    }
+    const name = propertyNameText(prop.name);
+    if (!name) {
+      opaque = true;
+      continue;
+    }
+    if (name.startsWith('$')) {
+      opaque = true;
+      continue;
+    }
+
+    const initializer = unwrapExpression(prop.initializer);
+    if (!ts.isObjectLiteralExpression(initializer)) {
+      equalityFields.push(name);
+      continue;
+    }
+
+    const operators = readObjectShape(initializer);
+    if (operators.opaque || operators.fields.length === 0) {
+      opaque = true;
+      continue;
+    }
+    if (operators.fields.every((field) => field.name === '$eq')) {
+      equalityFields.push(name);
+      continue;
+    }
+    if (operators.fields.some((field) => RANGE_OPERATORS.has(field.name))) {
+      rangeFields.push(name);
+      continue;
+    }
+    opaque = true;
+  }
+
+  return { equalityFields, rangeFields, opaque };
+}
+
+function findSortObject(node: ts.CallExpression): ts.Expression | undefined {
+  const optionsArg = node.arguments[1] ? unwrapExpression(node.arguments[1]) : undefined;
+  if (optionsArg && ts.isObjectLiteralExpression(optionsArg)) {
+    for (const prop of optionsArg.properties) {
+      if (
+        ts.isPropertyAssignment(prop) &&
+        propertyNameText(prop.name) === 'sort'
+      ) {
+        return unwrapExpression(prop.initializer);
+      }
+    }
+  }
+
+  let current: ts.Node | undefined = node.parent;
+  while (current) {
+    if (ts.isCallExpression(current) && ts.isPropertyAccessExpression(current.expression)) {
+      if (current.expression.name.text === 'sort') {
+        const sortArg = current.arguments[0];
+        return sortArg ? unwrapExpression(sortArg) : undefined;
+      }
+    }
+    current = current.parent;
+  }
+  return undefined;
+}
+
+export function getMongoSortShape(node: ts.CallExpression): ObjectShape {
+  const sortObject = findSortObject(node);
+  if (!sortObject) {
+    return { fields: [], opaque: false };
+  }
+  if (!ts.isObjectLiteralExpression(sortObject)) {
+    return { fields: [], opaque: true };
+  }
+  return readObjectShape(sortObject);
+}
+
 export function getMongoFilterFields(node: ts.CallExpression): string[] {
   const filterArg = node.arguments[0];
   if (filterArg && ts.isObjectLiteralExpression(filterArg)) {
@@ -611,6 +820,18 @@ export function looksLikePostgresSource(content: string): boolean {
   return /from\s+['"]pg['"]|from\s+['"]pg-pool['"]|from\s+['"]@prisma\/client['"]|from\s+['"]postgres['"]|require\s*\(\s*['"]pg['"]/.test(
     content,
   );
+}
+
+export function looksLikeRedisSource(content: string): boolean {
+  return /from\s+['"](?:ioredis|redis)['"]|require\s*\(\s*['"](?:ioredis|redis)['"]/.test(content);
+}
+
+export function looksLikePrismaSource(content: string): boolean {
+  return /@prisma\/client/.test(content);
+}
+
+export function looksLikeTypeormSource(content: string): boolean {
+  return /from\s+['"]typeorm['"]|require\s*\(\s*['"]typeorm['"]/.test(content);
 }
 
 export function isCreateIndexCall(node: ts.CallExpression): boolean {

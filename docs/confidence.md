@@ -26,12 +26,15 @@ Static analysis cannot see runtime database state, traffic, or values inside var
 | `db.mongo.n-plus-one` / `db.pg.n-plus-one` | potential-strong if the loop binding is in the query; else potential-moderate | Per-item queries are a smell, not proof of N+1 at runtime. |
 | `db.mongo.unbounded-find` | potential-moderate | Helpers wrapping `find()` are not followed. |
 | `db.pg.unbounded-select` | potential-weak | SQL strings may be views, builders, or already bounded elsewhere. |
-| `db.mongo.index-not-in-source` | potential-moderate | Compared only to `createIndex` in source. No finding if the repo has zero `createIndex` calls. |
+| `db.mongo.index-not-in-source` | potential-moderate | Compound prefix and sort direction compared only to in-repo `createIndex`. No finding if the repo has zero `createIndex` calls or any dynamic key spec. |
 | `async.await-in-loop` | confirmed-strong | Await is in an iteration body. `Promise.all` is a suggestion only when items look independent. |
 | `async.sequential-independent-awaits` | potential-strong | No in-block identifier dependence. Side effects are not modeled. |
 | `async.blocking-sync-in-handler` | confirmed-syntactic | `*Sync` APIs in a route handler or loop. Module-scope startup reads are ignored. |
 | `pooling.client-in-handler` / `pooling.client-in-loop` | confirmed-syntactic / confirmed-strong | Construction of `MongoClient` / `Pool` / `createPool`, not `client.connect()` on an existing instance. |
 | `deps.*` | potential-weak to confirmed-strong | Import scan cannot see CLI binaries or dynamic `require`. |
+| `redis.keys-command` / `redis.client-in-handler` | confirmed-strong / confirmed-syntactic | The command or constructor is visible in the AST. |
+| `redis.set-without-ttl` / `redis.command-in-loop` | potential-moderate / potential-strong | A later `EXPIRE` is not paired. Loop membership is syntactic. |
+| `orm.prisma.*` / `orm.typeorm.*` | potential-moderate to potential-strong | `take` passed through a variable is not visible. |
 
 Implementation: `src/models/confidence.ts`. Each finding should set `confidenceRationale`.
 

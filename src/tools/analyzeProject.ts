@@ -1,4 +1,5 @@
 import { buildAnalysisResult, groupFindings } from '../models/Finding.js';
+import { filterByMinSeverity, type AnalysisRequest } from '../models/severity.js';
 import type { AnalysisResult, Finding, GroupedFindings, ProjectContext } from '../types/index.js';
 import { createAnalysisEngine, type AnalysisEngine } from '../analysisEngine.js';
 
@@ -9,6 +10,10 @@ export interface ProjectAnalysisOutput {
     packageName: string | null;
     packageVersion: string | null;
     sourceFileCount: number;
+    scanTruncated: boolean;
+    skippedSymlinks: number;
+    skippedOversize: number;
+    skippedUnreadable: number;
   };
   findings: Finding[];
   groupedFindings: GroupedFindings;
@@ -18,9 +23,10 @@ export interface ProjectAnalysisOutput {
 export async function analyzeProject(
   projectPath: string,
   engine: AnalysisEngine = createAnalysisEngine(),
+  request: AnalysisRequest = {},
 ): Promise<ProjectAnalysisOutput> {
   const context = await engine.loadContext(projectPath);
-  const findings = await engine.runAll(context);
+  const findings = filterByMinSeverity(await engine.runAll(context), request.minSeverity);
   const result = buildAnalysisResult(findings, {
     technologies: context.detectedTechnologies,
     sourceFileCount: context.sourceFiles.length,
@@ -41,6 +47,10 @@ export function formatProjectOutput(
       packageName: context.packageJson?.name ?? null,
       packageVersion: context.packageJson?.version ?? null,
       sourceFileCount: context.sourceFiles.length,
+      scanTruncated: context.scan.truncated,
+      skippedSymlinks: context.scan.skippedSymlinks,
+      skippedOversize: context.scan.skippedOversize,
+      skippedUnreadable: context.scan.skippedUnreadable,
     },
     findings,
     groupedFindings: groupFindings(findings),

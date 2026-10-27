@@ -30,9 +30,11 @@ Does **not** flag `Array.prototype.find`, batched `$in` / `ANY()` / `IN (...)`, 
 
 ## analyze_indexes
 
-MongoDB-focused comparison of in-repo `createIndex` / `ensureIndex` keys vs query filter/sort fields.
+MongoDB-focused comparison of in-repo `createIndex` / `ensureIndex` / `createIndexes` keys vs query filter and sort fields.
 
-Does **not** inspect Atlas or the live cluster. If the repository contains no `createIndex` calls, this tool emits no index findings (indexes may be managed elsewhere). `_id` lookups are ignored.
+Coverage is a compound-index prefix check: equality fields (any order) must be a prefix, at most one range predicate may be the next key, and sort direction must match that key order or a full reverse scan. A bag of field names is not treated as coverage.
+
+Findings stay **potential**. They are not a statement that the database is missing an index. If the repository contains no `createIndex` calls, or any spec is dynamic (variable, spread, or computed key), this tool emits no index findings. `_id` lookups are ignored.
 
 ## analyze_async_patterns
 
@@ -59,6 +61,8 @@ Analyzes `package.json` via static import/require scans:
 - Test tools listed under `dependencies`
 - Imports not declared in `package.json`
 
+When `package-lock.json` is present, reports a package resolved to more than one version. That finding stays **potential**: nested copies are sometimes required.
+
 Does **not** emit informational dependency-count findings. Yarn/pnpm lockfiles and CLI-only packages are not fully modeled.
 
 ## investigate_performance
@@ -76,7 +80,45 @@ Runs every analyzer once, then returns an **investigation** payload for an AI cl
 - `inspectNext` — ordered list of finding / file / cluster targets
 - `summary` — includes `clusterCount`
 
-Use this as the default entry point when an agent should decide what to inspect next. The six `analyze_*` tools remain for focused scans.
+Use this as the default entry point when an agent should decide what to inspect next. The focused `analyze_*` tools remain for one category.
+
+Every tool accepts optional `minSeverity`: `info`, `low`, `medium`, `high`, or `critical`. Findings below that rank are omitted.
+
+## explain_performance
+
+Runs the full scan, retrieves the closest rule cards and findings for `question`, and answers from those passages only.
+
+**Input:** `projectPath`, optional `question`, optional `minSeverity`.
+
+**Output:** `mode` (`llm` or `retrieved-only`), `answer`, `retrieval` (id, score, excerpt), `findings`, `summary`.
+
+No model is called unless `PERFORMANCE_MCP_LLM_BASE_URL` and `PERFORMANCE_MCP_LLM_API_KEY` are set. Passages are marked untrusted so instructions inside repository text are not treated as system instructions.
+
+## export_report
+
+**Input:** `projectPath`, optional `format` (`json` or `sarif`), optional `minSeverity`.
+
+`json` is the `analyze_project` payload. `sarif` is SARIF 2.1.0. The server does not write the report to disk.
+
+## analyze_redis patterns
+
+Covered by the full scan (there is no separate Redis tool):
+
+- `KEYS`
+- `SET` / `HSET` without `EX`, `PX`, `EXAT`, `PXAT`, or `KEEPTTL`
+- `createClient` or `new Redis` inside a route handler
+- `get` / `set` and similar commands inside a loop
+
+A module-scope client and `SET` with `EX` are not findings.
+
+## analyze_orm patterns
+
+Covered by the full scan:
+
+- Prisma `findMany` / `findUnique` inside a loop
+- Prisma `findMany` without `take` or `cursor`
+- TypeORM `find` / `findOne` / `getMany` inside a loop
+- TypeORM list queries without `take`, `skip`, or `limit`
 
 ## Finding schema
 

@@ -210,6 +210,7 @@ export function buildInvestigationResult(
       packageName: context.packageJson?.name ?? null,
       packageVersion: context.packageJson?.version ?? null,
       sourceFileCount: context.sourceFiles.length,
+      scan: context.scan,
       technologies: context.detectedTechnologies,
       databases: context.databases,
       frameworks: context.frameworks,
