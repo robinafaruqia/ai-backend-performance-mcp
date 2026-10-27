@@ -254,6 +254,66 @@ export async function collectSourceFiles(
   return { files, scan };
 }
 
+/** Size and mtime of every eligible source file, ignoring read caps. Used to invalidate the project cache. */
+export async function fingerprintSourceTree(
+  projectPath: string,
+  options: {
+    extensions?: string[];
+    skipPatterns?: string[];
+    maxFileSizeBytes?: number;
+  } = {},
+): Promise<string> {
+  const extensions = options.extensions ?? ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
+  const skipPatterns = new Set((options.skipPatterns ?? [...DEFAULT_SKIP_DIRS]).map((name) => name.toLowerCase()));
+  const maxFileSizeBytes = options.maxFileSizeBytes ?? DEFAULT_MAX_FILE_SIZE_BYTES;
+  const resolvedRoot = await resolveProjectPath(projectPath);
+  const parts: string[] = [];
+
+  async function walk(currentDir: string): Promise<void> {
+    assertPathInsideRoot(resolvedRoot, currentDir);
+    const dirStats = await lstat(currentDir).catch(() => null);
+    if (!dirStats || dirStats.isSymbolicLink() || !dirStats.isDirectory()) {
+      return;
+    }
+    const entries = await readdir(currentDir, { withFileTypes: true }).catch(() => null);
+    if (!entries) {
+      return;
+    }
+    for (const entry of entries) {
+      const absolutePath = path.join(currentDir, entry.name);
+      assertPathInsideRoot(resolvedRoot, absolutePath);
+      if (entry.isSymbolicLink()) {
+        continue;
+      }
+      if (entry.isDirectory()) {
+        if (!shouldSkipDirectory(entry.name, skipPatterns)) {
+          await walk(absolutePath);
+        }
+        continue;
+      }
+      if (!entry.isFile()) {
+        continue;
+      }
+      const relativePath = path.relative(resolvedRoot, absolutePath);
+      if (shouldSkipFile(relativePath, extensions)) {
+        continue;
+      }
+      const entryStats = await lstat(absolutePath).catch(() => null);
+      if (!entryStats || entryStats.isSymbolicLink() || !entryStats.isFile()) {
+        continue;
+      }
+      if (entryStats.size > maxFileSizeBytes) {
+        continue;
+      }
+      parts.push(`${relativePath}:${entryStats.size}:${entryStats.mtimeMs}`);
+    }
+  }
+
+  await walk(resolvedRoot);
+  parts.sort();
+  return parts.join('\n');
+}
+
 export async function readJsonFile<T>(filePath: string, rootPath: string): Promise<T | null> {
   assertPathInsideRoot(rootPath, filePath);
   const read = await readRegularFile(filePath);

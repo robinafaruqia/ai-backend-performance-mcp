@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0
+
+Redis and Prisma/TypeORM analyzers, in-memory project cache, `minSeverity` on every tool, and SARIF or JSON export. `explain_performance` retrieves rule cards and findings, then calls an OpenAI-compatible model only when configured.
+
 ## 0.2.1
 
 MongoDB index findings follow compound key order and sort direction, and stay potential. `package-lock.json` duplicate versions are reported instead of discarding the lockfile read. Source scans refuse symlink reads, cap total bytes, and record when a scan stops early.

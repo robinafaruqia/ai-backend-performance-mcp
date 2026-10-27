@@ -32,6 +32,9 @@ Static analysis cannot see runtime database state, traffic, or values inside var
 | `async.blocking-sync-in-handler` | confirmed-syntactic | `*Sync` APIs in a route handler or loop. Module-scope startup reads are ignored. |
 | `pooling.client-in-handler` / `pooling.client-in-loop` | confirmed-syntactic / confirmed-strong | Construction of `MongoClient` / `Pool` / `createPool`, not `client.connect()` on an existing instance. |
 | `deps.*` | potential-weak to confirmed-strong | Import scan cannot see CLI binaries or dynamic `require`. |
+| `redis.keys-command` / `redis.client-in-handler` | confirmed-strong / confirmed-syntactic | The command or constructor is visible in the AST. |
+| `redis.set-without-ttl` / `redis.command-in-loop` | potential-moderate / potential-strong | A later `EXPIRE` is not paired. Loop membership is syntactic. |
+| `orm.prisma.*` / `orm.typeorm.*` | potential-moderate to potential-strong | `take` passed through a variable is not visible. |
 
 Implementation: `src/models/confidence.ts`. Each finding should set `confidenceRationale`.
 

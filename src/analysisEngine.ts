@@ -3,12 +3,14 @@ import { detectTechnologies, parsePackageJson } from './parsers/packageJson.js';
 import { loadSourceFiles } from './parsers/sourceFiles.js';
 import { createProjectContext } from './models/ProjectContext.js';
 import type { Analyzer, Finding, ProjectContext } from './types/index.js';
-import { resolveProjectPath } from './utils/fileSystem.js';
+import { fingerprintSourceTree, resolveProjectPath } from './utils/fileSystem.js';
 import { asyncPatternAnalyzer } from './analyzers/async/asyncPatternAnalyzer.js';
 import { databaseQueryAnalyzer } from './analyzers/databaseQueryAnalyzer.js';
 import { dependencyAnalyzer } from './analyzers/dependencies/dependencyAnalyzer.js';
 import { indexAnalyzer } from './analyzers/mongodb/indexAnalyzerRunner.js';
+import { ormQueryAnalyzer } from './analyzers/orm/ormQueryAnalyzer.js';
 import { connectionPoolAnalyzer } from './analyzers/pooling/connectionPoolAnalyzer.js';
+import { redisAnalyzer } from './analyzers/redis/redisAnalyzer.js';
 import { finalizeFindings } from './investigation/finalizeFindings.js';
 
 export interface AnalysisEngineOptions {
@@ -21,7 +23,16 @@ const defaultAnalyzers: Analyzer[] = [
   asyncPatternAnalyzer,
   connectionPoolAnalyzer,
   dependencyAnalyzer,
+  redisAnalyzer,
+  ormQueryAnalyzer,
 ];
+
+const MAX_CACHED_PROJECTS = 8;
+const contextCache = new Map<string, { fingerprint: string; context: ProjectContext }>();
+
+export function clearProjectContextCache(): void {
+  contextCache.clear();
+}
 
 export class AnalysisEngine {
   private readonly analyzers: Analyzer[];
@@ -40,6 +51,17 @@ export class AnalysisEngine {
       sourceFiles: [],
       detectedTechnologies,
     });
+    const treeFingerprint = await fingerprintSourceTree(resolvedPath, {
+      extensions: contextShell.config.extensions,
+      skipPatterns: contextShell.config.skipPatterns,
+      maxFileSizeBytes: contextShell.config.maxFileSizeBytes,
+    });
+    const fingerprint = `${JSON.stringify(packageJson)}\n${treeFingerprint}`;
+    const cached = contextCache.get(resolvedPath);
+    if (cached?.fingerprint === fingerprint) {
+      return cached.context;
+    }
+
     const loaded = await loadSourceFiles(resolvedPath, {
       extensions: contextShell.config.extensions,
       skipPatterns: contextShell.config.skipPatterns,
@@ -48,13 +70,21 @@ export class AnalysisEngine {
       maxTotalBytes: contextShell.config.maxTotalBytes,
     });
 
-    return createProjectContext({
+    const context = createProjectContext({
       projectPath: resolvedPath,
       packageJson,
       sourceFiles: loaded.files,
       detectedTechnologies,
       scan: loaded.scan,
     });
+    contextCache.set(resolvedPath, { fingerprint, context });
+    if (contextCache.size > MAX_CACHED_PROJECTS) {
+      const oldest = contextCache.keys().next().value;
+      if (oldest) {
+        contextCache.delete(oldest);
+      }
+    }
+    return context;
   }
 
   async runAll(context: ProjectContext): Promise<Finding[]> {

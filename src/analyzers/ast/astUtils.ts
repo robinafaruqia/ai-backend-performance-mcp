@@ -822,6 +822,18 @@ export function looksLikePostgresSource(content: string): boolean {
   );
 }
 
+export function looksLikeRedisSource(content: string): boolean {
+  return /from\s+['"](?:ioredis|redis)['"]|require\s*\(\s*['"](?:ioredis|redis)['"]/.test(content);
+}
+
+export function looksLikePrismaSource(content: string): boolean {
+  return /@prisma\/client/.test(content);
+}
+
+export function looksLikeTypeormSource(content: string): boolean {
+  return /from\s+['"]typeorm['"]|require\s*\(\s*['"]typeorm['"]/.test(content);
+}
+
 export function isCreateIndexCall(node: ts.CallExpression): boolean {
   return /\b(createIndex|ensureIndex|createIndexes)\b/.test(getFullCallExpressionName(node));
 }

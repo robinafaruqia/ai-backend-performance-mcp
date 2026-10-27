@@ -50,7 +50,9 @@ See [docs/architecture.md](docs/architecture.md) for layer details.
 | MongoDB indexes | Filter/sort fields without matching `createIndex` |
 | Async patterns | `await` in loops, sequential awaits, blocking sync ops |
 | Connection pooling | Client/pool creation in handlers or loops |
-| Dependencies | Unused deps, dev/prod misclassification, lockfile stats |
+| Dependencies | Unused deps, dev/prod misclassification, duplicate lockfile versions |
+| Redis | `KEYS`, writes without TTL, clients created in handlers, commands in loops |
+| ORM | Prisma and TypeORM N+1 reads and list queries without `take` / `limit` |
 
 ## MCP Tools
 
@@ -63,6 +65,8 @@ See [docs/architecture.md](docs/architecture.md) for layer details.
 | `analyze_connection_pooling` | Connection lifecycle anti-patterns |
 | `analyze_dependencies` | `package.json` / lockfile hygiene |
 | `investigate_performance` | Full scan plus code-path context, related findings, clusters, and inspect-next hints |
+| `explain_performance` | Retrieves rule cards and findings, then answers from those passages. Uses an LLM only when configured |
+| `export_report` | Same scan as JSON or SARIF 2.1.0. Does not write a file |
 
 Tool reference: [docs/tools.md](docs/tools.md)
 
@@ -175,7 +179,8 @@ Try the included demo project at [examples/sample-node-api](examples/sample-node
 - `Array.find`, batched `$in`/`ANY()`, `_id` lookups, and module-scope DB clients are not treated as issues
 - Sequential awaits are flagged only when they do not consume prior bindings; `Promise.all` is never reported as a finding
 - Dependency unused detection is import-scan based
-- Redis-specific rules are planned but not implemented in v0.1.0
+- Redis, Prisma, and TypeORM rules are syntactic. They do not measure latency or see a later `EXPIRE` / `take` passed through a variable
+- `explain_performance` sends only retrieved passages to a model. With no `PERFORMANCE_MCP_LLM_BASE_URL` and `PERFORMANCE_MCP_LLM_API_KEY`, the answer is assembled from those passages and no model is called
 
 ## Development
 
@@ -199,13 +204,25 @@ npm test
 
 Fixture projects under `tests/fixtures/` pair **problematic** and **valid** code for N+1 queries, indexes, async, pooling, and dependencies so analyzers do not fire on every await, query, loop, or connection.
 
+## Retrieval and LLM
+
+`explain_performance` is retrieval-augmented:
+
+1. Analyzers produce findings.
+2. A lexical index ranks those findings plus the built-in rule cards for the question.
+3. If `PERFORMANCE_MCP_LLM_BASE_URL` and `PERFORMANCE_MCP_LLM_API_KEY` are set, an OpenAI-compatible chat completion sees only those passages. Otherwise the tool returns a retrieved-only answer.
+
+Optional `PERFORMANCE_MCP_LLM_MODEL` (default `gpt-4o-mini`). Every analysis tool accepts `minSeverity` (`info`, `low`, `medium`, `high`, `critical`).
+
+Repository text inside a passage is untrusted. The system prompt tells the model to ignore instructions found there.
+
 ## Roadmap
 
-- [ ] Redis/cache analyzer
-- [ ] Prisma/TypeORM-specific query rules
-- [ ] ProjectContext caching
-- [ ] SARIF/JSON report export
-- [ ] Configurable severity thresholds
+- [x] Redis/cache analyzer
+- [x] Prisma/TypeORM-specific query rules
+- [x] ProjectContext caching
+- [x] SARIF/JSON report export
+- [x] Configurable severity thresholds
 
 ## Contributing
 

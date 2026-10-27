@@ -108,7 +108,49 @@ const BY_RULE: Record<string, RuleGuidance> = {
     costWhy: 'An undeclared import depends on hoist/transitive luck and can break on install.',
     inspectNext: ['Declare the package in package.json or confirm it is a workspace package.'],
   },
+  'redis.keys-command': {
+    costWhy: 'Redis KEYS scans the whole keyspace and blocks the server while it runs.',
+    inspectNext: [
+      'Replace KEYS with SCAN and a cursor.',
+      'Confirm this is not a one-off admin script outside the request path.',
+    ],
+  },
+  'redis.set-without-ttl': {
+    costWhy: 'A SET with no expiry can grow memory without a bound.',
+    inspectNext: [
+      'Check for a later EXPIRE on the same key. This rule does not pair those calls.',
+      'Set EX or PX when the value is a cache entry.',
+    ],
+  },
+  'redis.client-in-handler': {
+    costWhy: 'A Redis client created per request repeats connection setup instead of using a pool.',
+    inspectNext: ['Create the client once at startup and reuse it.'],
+  },
+  'redis.command-in-loop': {
+    costWhy: 'One Redis round-trip per loop item adds latency that grows with the list.',
+    inspectNext: ['Batch with a pipeline or MGET/MSET when the keys are known.'],
+  },
+  'orm.prisma.n-plus-one': {
+    costWhy: 'A Prisma read per loop item issues one SQL statement per element.',
+    inspectNext: ['Load the set with findMany and an in-filter, or include the relation on the parent query.'],
+  },
+  'orm.prisma.unbounded-find': {
+    costWhy: 'findMany without take can load an entire table into the Node process.',
+    inspectNext: ['Add take, or confirm a caller passes take through a variable this scan cannot see.'],
+  },
+  'orm.typeorm.n-plus-one': {
+    costWhy: 'A TypeORM read per loop item scales round-trips with the collection size.',
+    inspectNext: ['Query once with In() or a join instead of find inside the loop.'],
+  },
+  'orm.typeorm.unbounded-find': {
+    costWhy: 'find or getMany without take/limit can return every matching row.',
+    inspectNext: ['Add take or limit on the query builder.'],
+  },
 };
+
+export function knownRuleIds(): string[] {
+  return Object.keys(BY_RULE);
+}
 
 export function guidanceForRule(ruleId: string): RuleGuidance {
   return BY_RULE[ruleId] ?? DEFAULT_GUIDANCE;

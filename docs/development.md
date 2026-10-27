@@ -45,6 +45,18 @@ The server communicates over **stdio** (do not write analysis logs to stdout). P
 
 Confirm `dist/index.js` starts with `#!/usr/bin/env node` after a build.
 
+## Optional LLM
+
+`explain_performance` stays retrieved-only unless both of these are set:
+
+| Variable | Purpose |
+|----------|---------|
+| `PERFORMANCE_MCP_LLM_BASE_URL` | OpenAI-compatible origin, for example `https://api.openai.com/v1` |
+| `PERFORMANCE_MCP_LLM_API_KEY` | Bearer token. Never logged. |
+| `PERFORMANCE_MCP_LLM_MODEL` | Model name. Defaults to `gpt-4o-mini`. |
+
+The client posts to `{BASE_URL}/chat/completions`.
+
 ## Publishing to npm
 
 Quality checks stay in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml). A `v*` tag push runs [`.github/workflows/publish.yml`](../.github/workflows/publish.yml), which calls `npm publish` (`prepublishOnly` rebuilds and tests). Set repository secret `NPM_TOKEN` to an npm automation token before tagging `v0.1.0`.

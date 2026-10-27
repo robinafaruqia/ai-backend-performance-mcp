@@ -27,7 +27,7 @@ flowchart TD
 
 ### MCP Server (`src/server/`)
 
-- Registers six focused analysis tools plus `investigate_performance`
+- Registers focused analysis tools plus `investigate_performance`, `explain_performance`, and `export_report`
 - Handles stdio transport
 - Contains no analysis logic
 
@@ -53,7 +53,9 @@ flowchart TD
 | `indexAnalyzer` | Compares queries to in-repo `createIndex` key order and sort direction. Never claims the live database is missing an index. No findings if the repo has no `createIndex`, or if any key spec is dynamic. |
 | `asyncPatternAnalyzer` | Await in loops, sequential **independent** awaits, blocking sync I/O on request paths. Does not flag `Promise.all`. |
 | `connectionPoolAnalyzer` | `MongoClient` / `Pool` construction in handlers or loops, not module-scope startup. |
-| `dependencyAnalyzer` | Unused/misplaced deps from static imports. No informational count findings. |
+| `dependencyAnalyzer` | Unused/misplaced deps from static imports. Duplicate versions in `package-lock.json`. |
+| `redisAnalyzer` | `KEYS`, `SET` without TTL, client construction in handlers, commands in loops. |
+| `ormQueryAnalyzer` | Prisma and TypeORM N+1 and unbounded list reads. |
 
 Shared call classification lives in `src/analyzers/ast/astUtils.ts`. Confidence bands: [confidence.md](./confidence.md).
 
@@ -64,7 +66,11 @@ Shared call classification lives in `src/analyzers/ast/astUtils.ts`. Confidence 
 - `utils/fileSystem.ts` — path containment, symlink skip (`O_NOFOLLOW` on read), size/count/total-byte caps, truncation stats
 - `analyzers/ast/astUtils.ts` — TypeScript AST helpers
 - `models/confidence.ts` — confidence constants and clamp
-- `investigation/` — enrichment, related-finding links, clusters/hotspots (deterministic catalogs, not an LLM)
+- `investigation/` — enrichment, related-finding links, clusters/hotspots (deterministic catalogs)
+- `rag/` — lexical retrieval over rule cards and findings
+- `llm/` — optional OpenAI-compatible completion. Used only by `explain_performance`
+- `report/sarif.ts` — SARIF 2.1.0 conversion. The tool returns the document and does not write it
+- Project contexts are cached in memory until `package.json` or a source file's size or mtime changes
 
 ## Safety
 
